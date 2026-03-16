@@ -42,7 +42,7 @@ To be defined after bootstrap and automation setup are completed.
 
 \- Primary workflow: Codex app
 
-\- Execution mode: Local / Worktree
+\- Execution mode: Local
 
 \- Version control: Git
 

@@ -37,7 +37,7 @@ tmp/
 temp/
 .cache/
 
-# Codex local environment artifacts
+# Codex
 .codex/local/
 
 # Misc
