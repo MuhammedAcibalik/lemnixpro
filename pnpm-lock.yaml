@@ -10,7 +10,7 @@ importers:
     dependencies:
       drizzle-orm:
         specifier: ^0.41.0
-        version: 0.41.0(gel@2.2.0)(pg@8.20.0)
+        version: 0.41.0(@types/pg@8.18.0)(gel@2.2.0)(pg@8.20.0)
       next:
         specifier: ^15.2.0
         version: 15.5.12(@playwright/test@1.58.2)(react-dom@19.2.4(react@19.2.4))(react@19.2.4)
@@ -36,6 +36,9 @@ importers:
       '@types/node':
         specifier: ^22.13.10
         version: 22.19.15
+      '@types/pg':
+        specifier: ^8.18.0
+        version: 8.18.0
       '@types/react':
         specifier: ^19.0.10
         version: 19.2.14
@@ -942,6 +945,9 @@ packages:
 
   '@types/node@22.19.15':
     resolution: {integrity: sha512-F0R/h2+dsy5wJAUe3tAU6oqa2qbWY5TpNfL/RGmo1y38hiyO1w3x2jPtt76wmuaJI4DQnOBu21cNXQ2STIUUWg==}
+
+  '@types/pg@8.18.0':
+    resolution: {integrity: sha512-gT+oueVQkqnj6ajGJXblFR4iavIXWsGAFCk3dP4Kki5+a9R4NMt0JARdk6s8cUKcfUoqP5dAtDSLU8xYUTFV+Q==}
 
   '@types/react-dom@19.2.3':
     resolution: {integrity: sha512-jp2L/eY6fn+KgVVQAOqYItbF0VY/YApe5Mz2F0aykSO8gx31bYCZyvSeYxCHKvzHG5eZjc+zyaS5BrBWya2+kQ==}
@@ -3218,6 +3224,12 @@ snapshots:
     dependencies:
       undici-types: 6.21.0
 
+  '@types/pg@8.18.0':
+    dependencies:
+      '@types/node': 22.19.15
+      pg-protocol: 1.13.0
+      pg-types: 2.2.0
+
   '@types/react-dom@19.2.3(@types/react@19.2.14)':
     dependencies:
       '@types/react': 19.2.14
@@ -3658,8 +3670,9 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
-  drizzle-orm@0.41.0(gel@2.2.0)(pg@8.20.0):
+  drizzle-orm@0.41.0(@types/pg@8.18.0)(gel@2.2.0)(pg@8.20.0):
     optionalDependencies:
+      '@types/pg': 8.18.0
       gel: 2.2.0
       pg: 8.20.0
 

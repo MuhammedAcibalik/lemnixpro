@@ -43,3 +43,6 @@ temp/
 # Misc
 *.bak
 *.old
+
+.next/
+tsconfig.tsbuildinfo
