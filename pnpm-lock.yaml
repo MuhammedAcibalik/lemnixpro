@@ -404,6 +404,9 @@ importers:
       eslint:
         specifier: ^9.22.0
         version: 9.39.4
+      pg-mem:
+        specifier: ^3.0.14
+        version: 3.0.14
       supertest:
         specifier: ^7.0.0
         version: 7.2.2

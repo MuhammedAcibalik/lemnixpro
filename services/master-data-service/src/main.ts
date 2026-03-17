@@ -27,7 +27,7 @@ async function bootstrap(): Promise<void> {
 
   const swaggerConfig = new DocumentBuilder()
     .setTitle(serviceName)
-    .setDescription("Master data boundary scaffold for LemnixPRO.")
+    .setDescription("Master data boundary for LemnixPRO.")
     .setVersion("0.1.0")
     .build();
 
