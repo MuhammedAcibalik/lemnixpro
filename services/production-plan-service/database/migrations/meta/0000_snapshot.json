@@ -4,8 +4,8 @@
   "version": "7",
   "dialect": "postgresql",
   "tables": {
-    "production_plan.import_batches": {
-      "name": "import_batches",
+    "production_plan.production_plan_import_batches": {
+      "name": "production_plan_import_batches",
       "schema": "production_plan",
       "columns": {
         "id": {
@@ -73,8 +73,8 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "production_plan.rows": {
-      "name": "rows",
+    "production_plan.production_plan_rows": {
+      "name": "production_plan_rows",
       "schema": "production_plan",
       "columns": {
         "id": {
@@ -252,10 +252,10 @@
         }
       },
       "foreignKeys": {
-        "rows_batch_id_import_batches_id_fk": {
-          "name": "rows_batch_id_import_batches_id_fk",
-          "tableFrom": "rows",
-          "tableTo": "import_batches",
+        "production_plan_rows_batch_id_production_plan_import_batches_id_fk": {
+          "name": "production_plan_rows_batch_id_production_plan_import_batches_id_fk",
+          "tableFrom": "production_plan_rows",
+          "tableTo": "production_plan_import_batches",
           "schemaTo": "production_plan",
           "columnsFrom": [
             "batch_id"

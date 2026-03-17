@@ -1,6 +1,6 @@
-CREATE SCHEMA "production_plan";
+CREATE SCHEMA IF NOT EXISTS "production_plan";
 --> statement-breakpoint
-CREATE TABLE "production_plan"."import_batches" (
+CREATE TABLE "production_plan"."production_plan_import_batches" (
 	"id" uuid PRIMARY KEY NOT NULL,
 	"file_name" varchar(255) NOT NULL,
 	"sheet_name" varchar(255) NOT NULL,
@@ -12,7 +12,7 @@ CREATE TABLE "production_plan"."import_batches" (
 	"updated_at" timestamp with time zone DEFAULT now() NOT NULL
 );
 --> statement-breakpoint
-CREATE TABLE "production_plan"."rows" (
+CREATE TABLE "production_plan"."production_plan_rows" (
 	"id" uuid PRIMARY KEY NOT NULL,
 	"batch_id" uuid NOT NULL,
 	"row_index" integer NOT NULL,
@@ -37,6 +37,6 @@ CREATE TABLE "production_plan"."rows" (
 	"updated_at" timestamp with time zone DEFAULT now() NOT NULL
 );
 --> statement-breakpoint
-ALTER TABLE "production_plan"."rows" ADD CONSTRAINT "rows_batch_id_import_batches_id_fk" FOREIGN KEY ("batch_id") REFERENCES "production_plan"."import_batches"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
-CREATE INDEX "production_plan_rows_batch_id_idx" ON "production_plan"."rows" USING btree ("batch_id");--> statement-breakpoint
-CREATE UNIQUE INDEX "production_plan_rows_batch_id_row_index_unique" ON "production_plan"."rows" USING btree ("batch_id","row_index");
+ALTER TABLE "production_plan"."production_plan_rows" ADD CONSTRAINT "production_plan_rows_batch_id_production_plan_import_batches_id_fk" FOREIGN KEY ("batch_id") REFERENCES "production_plan"."production_plan_import_batches"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+CREATE INDEX "production_plan_rows_batch_id_idx" ON "production_plan"."production_plan_rows" USING btree ("batch_id");--> statement-breakpoint
+CREATE UNIQUE INDEX "production_plan_rows_batch_id_row_index_unique" ON "production_plan"."production_plan_rows" USING btree ("batch_id","row_index");

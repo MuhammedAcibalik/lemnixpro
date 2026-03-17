@@ -26,7 +26,7 @@ export type ProductionPlanImportBatchStatus =
 export const productionPlanSchema = pgSchema(schemaNamespace);
 
 export const productionPlanImportBatches = productionPlanSchema.table(
-  "import_batches",
+  "production_plan_import_batches",
   {
     id: uuid("id").primaryKey().notNull(),
     fileName: varchar("file_name", { length: 255 }).notNull(),
@@ -51,7 +51,7 @@ export const productionPlanImportBatches = productionPlanSchema.table(
 );
 
 export const productionPlanRows = productionPlanSchema.table(
-  "rows",
+  "production_plan_rows",
   {
     id: uuid("id").primaryKey().notNull(),
     batchId: uuid("batch_id")
