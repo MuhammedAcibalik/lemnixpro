@@ -23,9 +23,6 @@ export default tseslint.config(
   ...tseslint.configs.recommendedTypeChecked,
   {
     files: ["**/*.{ts,tsx}"],
-    plugins: {
-      import: importPlugin
-    },
     languageOptions: {
       parserOptions: {
         projectService: true,
@@ -38,7 +35,6 @@ export default tseslint.config(
       }
     },
     rules: {
-      "import/no-relative-packages": "error",
       "@typescript-eslint/no-floating-promises": "error",
       "@typescript-eslint/no-misused-promises": [
         "error",
@@ -48,6 +44,16 @@ export default tseslint.config(
           }
         }
       ]
+    }
+  },
+  {
+    files: ["**/*.{ts,tsx}"],
+    ignores: ["apps/web/**/*.{ts,tsx}"],
+    plugins: {
+      import: importPlugin
+    },
+    rules: {
+      "import/no-relative-packages": "error"
     }
   },
   ...compat.config({

@@ -11,7 +11,7 @@
     "dev": "pnpm -r --parallel --filter \"./apps/*\" --filter \"./services/*\" --if-present dev",
     "build": "pnpm -r --if-present build",
     "typecheck": "pnpm -r --if-present typecheck",
-    "lint": "pnpm -r --if-present lint",
+    "lint": "pnpm -r --workspace-concurrency=1 --if-present lint",
     "test": "pnpm -r --if-present test",
     "infra:up": "docker compose -f infra/compose/docker-compose.backend.yml up -d",
     "infra:down": "docker compose -f infra/compose/docker-compose.backend.yml down",

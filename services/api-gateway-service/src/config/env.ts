@@ -38,7 +38,9 @@ class EnvironmentVariables {
   @IsString()
   JWT_EXPIRES_IN = "8h";
 
-  @IsUrl()
+  @IsUrl({
+    require_tld: false
+  })
   IDENTITY_SERVICE_BASE_URL = "http://localhost:3002";
 }
 
