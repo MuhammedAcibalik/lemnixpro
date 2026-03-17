@@ -2,6 +2,7 @@ import { plainToInstance } from "class-transformer";
 import {
   IsIn,
   IsInt,
+  IsNotEmpty,
   IsString,
   Max,
   Min,
@@ -24,7 +25,8 @@ class EnvironmentVariables {
   PORT = 3004;
 
   @IsString()
-  DATABASE_URL = "postgresql://postgres:postgres@localhost:5432/lemnixpro";
+  @IsNotEmpty()
+  DATABASE_URL!: string;
 }
 
 function asNumber(value: unknown, fallback: number): number {

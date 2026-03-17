@@ -31,6 +31,8 @@ Foundation migration in progress. The repository is structured as a `pnpm` works
 4. `pnpm typecheck`
 5. `pnpm build`
 
+`production-plan-service` requires `DATABASE_URL` explicitly. When using `infra/compose/docker-compose.backend.yml`, point it at the host port published by the `postgres` service. The compose file defaults `POSTGRES_PORT` to `5432`, but some local repo setups override it to `5433`, for example `postgresql://postgres:postgres@localhost:5433/lemnixpro`.
+
 ## Architecture Notes
 
 - `BACKEND_ARCHITECTURE.md`
