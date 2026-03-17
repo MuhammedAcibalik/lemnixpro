@@ -2,29 +2,34 @@
 .DS_Store
 Thumbs.db
 
-# Logs
-*.log
-logs/
-
 # Environment
 .env
 .env.*
 !.env.example
 
-# Node
+# Logs
+*.log
+logs/
+
+# Node and frontend
 node_modules/
+.npm/
+.pnpm-store/
 dist/
 build/
 coverage/
-.npm/
-.pnpm-store/
+.next/
+.turbo/
+*.tsbuildinfo
 
 # Python
 __pycache__/
-*.pyc
+*.py[cod]
 .venv/
 venv/
 .pytest_cache/
+.mypy_cache/
+*.egg-info/
 
 # Editor / IDE
 .vscode/
@@ -43,6 +48,3 @@ temp/
 # Misc
 *.bak
 *.old
-
-.next/
-tsconfig.tsbuildinfo

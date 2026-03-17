@@ -1,0 +1,18 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "lemnixpro-optimization-engine"
+version = "0.1.0"
+description = "Optimization engine scaffold for LemnixPRO."
+requires-python = ">=3.11"
+dependencies = [
+  "fastapi>=0.115.0,<1.0.0",
+  "uvicorn[standard]>=0.30.0,<1.0.0",
+  "pydantic>=2.9.0,<3.0.0",
+  "ortools>=9.11.4210,<10.0.0"
+]
+
+[tool.setuptools.packages.find]
+include = ["app*"]

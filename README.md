@@ -1,62 +1,40 @@
-\# Project Name
+# LemnixPRO
 
+Backend-first enterprise platform for 1D aluminum cutting optimization.
 
+## Repository Layout
 
-Professional software project initialized with Codex on Windows.
+- `apps/web`: Next.js shell for the internal web interface
+- `services/*`: NestJS microservices with explicit domain ownership
+- `packages/*`: shared workspace types, contracts, and utilities
+- `engines/optimization-engine`: Python FastAPI + OR-Tools engine scaffold
+- `infra/*`: local infrastructure manifests and Docker assets
+- `docs/*`: architecture, domain, and API documentation
 
+## Current Status
 
+Foundation migration in progress. The repository is structured as a `pnpm` workspace monorepo with backend-first service scaffolding, local infra definitions, and a minimal web shell.
 
-\## Purpose
+## Core Boundaries
 
-This repository is being built from scratch with a structured, automation-first workflow.
+- External traffic enters through `api-gateway-service`
+- Service-to-service data ownership stays isolated by schema
+- Async optimization workflows flow through RabbitMQ
+- Shared code is limited to `packages/shared-*`
+- Python keeps its own local schemas and does not import TypeScript packages
 
+## Quick Start
 
+1. `pnpm install`
+2. `python -m pip install -e engines/optimization-engine`
+3. `pnpm infra:up`
+4. `pnpm typecheck`
+5. `pnpm build`
 
-\## Current Status
+## Architecture Notes
 
-Bootstrap phase. Core architecture and project skeleton are not finalized yet.
-
-
-
-\## Goals
-
-\- Establish a clean project foundation
-
-\- Define agent rules and development workflow
-
-\- Prepare for scalable implementation
-
-\- Build with professional standards from day one
-
-
-
-\## Initial Scope
-
-To be defined after bootstrap and automation setup are completed.
-
-
-
-\## Environment
-
-\- OS: Windows
-
-\- Primary workflow: Codex app
-
-\- Execution mode: Local
-
-\- Version control: Git
-
-
-
-\## Next Planned Steps
-
-1\. Define agent rules in AGENTS.md
-
-2\. Finalize project type and stack
-
-3\. Create initial directory structure
-
-4\. Add package manager and runtime setup
-
-5\. Start first functional implementation
+- `BACKEND_ARCHITECTURE.md`
+- `docs/architecture/service-map.md`
+- `docs/architecture/communication.md`
+- `docs/architecture/database-ownership.md`
 

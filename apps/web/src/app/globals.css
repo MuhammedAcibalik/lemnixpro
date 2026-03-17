@@ -1,0 +1,68 @@
+:root {
+  color-scheme: light;
+  background: #f3f5f7;
+  color: #142033;
+  font-family: "Segoe UI", Arial, sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  min-height: 100%;
+}
+
+body {
+  background:
+    radial-gradient(circle at top left, rgba(28, 99, 175, 0.15), transparent 32%),
+    linear-gradient(180deg, #f8fafc 0%, #edf2f7 100%);
+}
+
+.app-shell {
+  display: grid;
+  min-height: 100vh;
+  place-items: center;
+  padding: 2rem;
+}
+
+.hero {
+  width: min(100%, 54rem);
+  border: 1px solid #d7e0ea;
+  border-radius: 1.5rem;
+  background: rgba(255, 255, 255, 0.92);
+  padding: clamp(2rem, 4vw, 3.5rem);
+  box-shadow: 0 24px 60px rgba(20, 32, 51, 0.1);
+}
+
+.eyebrow {
+  margin: 0 0 0.75rem;
+  color: #47627d;
+  font-size: 0.875rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.hero h1 {
+  margin: 0;
+  font-size: clamp(2.25rem, 6vw, 4rem);
+  line-height: 1.05;
+}
+
+.description {
+  margin: 1rem 0 0;
+  max-width: 40rem;
+  color: #314459;
+  font-size: 1rem;
+  line-height: 1.7;
+}
+
+.capability-list {
+  margin: 1.5rem 0 0;
+  padding-left: 1.25rem;
+  color: #1d2e42;
+  line-height: 1.8;
+}

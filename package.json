@@ -1,5 +1,5 @@
 {
-  "name": "lemnixpro",
+  "name": "lemnixpro-workspace",
   "version": "0.1.0",
   "private": true,
   "packageManager": "pnpm@10.6.2+sha512.47870716bea1572b53df34ad8647b42962bc790ce2bf4562ba0f643237d7302a3d6a8ecef9e4bdfc01d23af1969aa90485d4cebb0b9638fa5ef1daef656f6c1b",
@@ -8,37 +8,26 @@
     "pnpm": ">=10.0.0"
   },
   "scripts": {
-    "dev": "next dev",
-    "build": "next build",
-    "start": "next start",
-    "lint": "next lint",
-    "typecheck": "tsc --noEmit",
-    "test": "vitest run",
-    "test:watch": "vitest",
-    "test:e2e": "playwright test",
-    "db:generate": "drizzle-kit generate",
-    "db:migrate": "drizzle-kit migrate",
-    "db:studio": "drizzle-kit studio"
-  },
-  "dependencies": {
-    "drizzle-orm": "^0.41.0",
-    "next": "^15.2.0",
-    "next-auth": "^4.24.11",
-    "pg": "^8.13.3",
-    "react": "^19.0.0",
-    "react-dom": "^19.0.0",
-    "zod": "^3.24.2"
+    "dev": "pnpm -r --parallel --filter \"./apps/*\" --filter \"./services/*\" --if-present dev",
+    "build": "pnpm -r --if-present build",
+    "typecheck": "pnpm -r --if-present typecheck",
+    "lint": "pnpm -r --if-present lint",
+    "test": "pnpm -r --if-present test",
+    "infra:up": "docker compose -f infra/compose/docker-compose.backend.yml up -d",
+    "infra:down": "docker compose -f infra/compose/docker-compose.backend.yml down",
+    "infra:logs": "docker compose -f infra/compose/docker-compose.backend.yml logs -f",
+    "infra:config": "docker compose -f infra/compose/docker-compose.backend.yml config"
   },
   "devDependencies": {
-    "@playwright/test": "^1.51.0",
-    "@types/node": "^22.13.10",
-    "@types/pg": "^8.18.0",
-    "@types/react": "^19.0.10",
-    "@types/react-dom": "^19.0.4",
-    "drizzle-kit": "^0.30.4",
+    "@eslint/eslintrc": "^3.3.1",
+    "@eslint/js": "^9.22.0",
     "eslint": "^9.22.0",
     "eslint-config-next": "^15.2.0",
+    "eslint-import-resolver-typescript": "^4.3.5",
+    "eslint-plugin-import": "^2.31.0",
+    "tsx": "^4.19.3",
     "typescript": "^5.8.2",
+    "typescript-eslint": "^8.26.1",
     "vitest": "^3.0.8"
   }
 }
