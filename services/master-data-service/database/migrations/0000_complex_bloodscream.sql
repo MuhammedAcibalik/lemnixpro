@@ -1,4 +1,4 @@
-CREATE SCHEMA "master_data";
+CREATE SCHEMA IF NOT EXISTS "master_data";
 --> statement-breakpoint
 CREATE TABLE "master_data"."main_profiles" (
 	"id" uuid PRIMARY KEY NOT NULL,
