@@ -7,7 +7,7 @@ import type {
   LoginResponse
 } from "@lemnixpro/shared-contracts";
 
-import { IdentityAuthClient } from "@/infrastructure/http/identity-auth.client";
+import { IdentityAuthClient } from "../../infrastructure/http/identity-auth.client";
 
 type ProtectedPingResponse = {
   message: string;

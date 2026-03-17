@@ -2,9 +2,9 @@ import { randomUUID } from "node:crypto";
 
 import { Inject, Injectable } from "@nestjs/common";
 
-import { DATABASE_CLIENT } from "@/infrastructure/db/database.tokens";
-import type { IdentityDatabase } from "@/infrastructure/db/client";
-import { users, type IdentityUser } from "@/infrastructure/db/schema";
+import { DATABASE_CLIENT } from "../../infrastructure/db/database.tokens";
+import type { IdentityDatabase } from "../../infrastructure/db/client";
+import { users, type IdentityUser } from "../../infrastructure/db/schema";
 
 type CreateUserInput = {
   email: string;

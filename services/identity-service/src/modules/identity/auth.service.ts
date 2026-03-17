@@ -17,7 +17,7 @@ import type {
   LoginResponse
 } from "@lemnixpro/shared-contracts";
 
-import type { IdentityUser } from "@/infrastructure/db/schema";
+import type { IdentityUser } from "../../infrastructure/db/schema";
 
 import { PasswordHasherService } from "./password-hasher.service";
 import { TokenService } from "./token.service";

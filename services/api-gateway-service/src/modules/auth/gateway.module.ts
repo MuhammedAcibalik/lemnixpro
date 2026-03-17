@@ -1,6 +1,6 @@
 import { Module } from "@nestjs/common";
 
-import { HttpInfrastructureModule } from "@/infrastructure/http/http-infrastructure.module";
+import { HttpInfrastructureModule } from "../../infrastructure/http/http-infrastructure.module";
 
 import { AuthController } from "./auth.controller";
 import { AuthModule } from "./auth.module";

@@ -8,13 +8,7 @@
     "strictPropertyInitialization": false,
     "rootDir": ".",
     "outDir": "dist",
-    "noEmit": true,
-    "baseUrl": ".",
-    "paths": {
-      "@/*": [
-        "./src/*"
-      ]
-    }
+    "noEmit": true
   },
   "include": [
     "src/**/*.ts",
