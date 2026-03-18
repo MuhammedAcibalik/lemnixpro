@@ -2,11 +2,15 @@ import { plainToInstance } from "class-transformer";
 import {
   IsIn,
   IsInt,
+  IsNotEmpty,
   IsString,
+  IsUrl,
   Max,
   Min,
   validateSync
 } from "class-validator";
+
+import { asNumber } from "@lemnixpro/shared-utils";
 
 class EnvironmentVariables {
   @IsString()
@@ -24,22 +28,30 @@ class EnvironmentVariables {
   PORT = 3006;
 
   @IsString()
+  @IsNotEmpty()
   DATABASE_URL = "postgresql://postgres:postgres@localhost:5432/lemnixpro";
 
   @IsString()
   RABBITMQ_URL = "amqp://guest:guest@localhost:5672";
-}
 
-function asNumber(value: unknown, fallback: number): number {
-  const parsedValue = Number(value);
+  @IsUrl({
+    require_tld: false
+  })
+  PRODUCTION_PLAN_SERVICE_BASE_URL = "http://localhost:3004";
 
-  return Number.isFinite(parsedValue) ? parsedValue : fallback;
+  @IsUrl({
+    require_tld: false
+  })
+  MASTER_DATA_SERVICE_BASE_URL = "http://localhost:3003";
 }
 
 export function validateEnv(config: Record<string, unknown>): EnvironmentVariables {
   const validatedConfig = plainToInstance(EnvironmentVariables, {
     ...config,
-    PORT: asNumber(config.PORT, 3006)
+    PORT: asNumber(
+      typeof config.PORT === "string" ? config.PORT : undefined,
+      3006
+    )
   });
 
   const errors = validateSync(validatedConfig, {
