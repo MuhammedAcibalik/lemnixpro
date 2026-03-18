@@ -36,7 +36,7 @@ type OptimizationDryRunResponse = {
   }>;
   optimizationRequestPreview: {
     weekNumber: number;
-    activeBatchId: string;
+    sourceBatchId: string;
     mainProfiles: Array<{
       id: string;
       code: string;
@@ -405,7 +405,7 @@ describe("optimization-orchestrator-service dry-run endpoint", () => {
 
     expect(body.optimizationRequestPreview).toEqual({
       weekNumber: 12,
-      activeBatchId: "batch-week-12",
+      sourceBatchId: "batch-week-12",
       mainProfiles: [
         {
           id: "mp-1",

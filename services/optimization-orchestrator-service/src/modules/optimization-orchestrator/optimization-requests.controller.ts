@@ -1,14 +1,31 @@
-import { Body, Controller, HttpCode, Inject, Post } from "@nestjs/common";
+import {
+  Body,
+  Controller,
+  Get,
+  HttpCode,
+  Inject,
+  Param,
+  Post
+} from "@nestjs/common";
 import {
   ApiBadRequestResponse,
+  ApiCreatedResponse,
   ApiNotFoundResponse,
   ApiOkResponse,
   ApiOperation,
-  ApiTags
+  ApiParam,
+  ApiTags,
+  ApiUnprocessableEntityResponse
 } from "@nestjs/swagger";
 
-import { CreateOptimizationDryRunRequestDto } from "./dto/create-optimization-dry-run-request.dto";
+import { CreateOptimizationRequestDto } from "./dto/create-optimization-request.dto";
 import { OptimizationDryRunResponseDto } from "./dto/optimization-dry-run-response.dto";
+import {
+  CreateOptimizationRequestResponseDto,
+  OptimizationRequestDetailResponseDto,
+  OptimizationRequestPreparationFailedResponseDto,
+  OptimizationRequestSummaryDto
+} from "./dto/optimization-request-response.dto";
 import { OptimizationRequestsService } from "./optimization-requests.service";
 
 @ApiTags("optimization-requests")
@@ -33,8 +50,60 @@ export class OptimizationRequestsController {
     description: "No active production plan batch exists for the requested week."
   })
   async createDryRun(
-    @Body() request: CreateOptimizationDryRunRequestDto
+    @Body() request: CreateOptimizationRequestDto
   ): Promise<OptimizationDryRunResponseDto> {
     return this.optimizationRequestsService.createDryRun(request);
+  }
+
+  @Post()
+  @ApiOperation({
+    summary:
+      "Create and persist an optimization request from the active production plan batch for the selected week."
+  })
+  @ApiCreatedResponse({ type: CreateOptimizationRequestResponseDto })
+  @ApiBadRequestResponse({
+    description: "weekNumber must be a positive integer."
+  })
+  @ApiNotFoundResponse({
+    description: "No active production plan batch exists for the requested week."
+  })
+  @ApiUnprocessableEntityResponse({
+    type: OptimizationRequestPreparationFailedResponseDto
+  })
+  async createRequest(
+    @Body() request: CreateOptimizationRequestDto
+  ): Promise<CreateOptimizationRequestResponseDto> {
+    return this.optimizationRequestsService.createRequest(request);
+  }
+
+  @Get()
+  @ApiOperation({
+    summary: "List persisted optimization requests ordered newest first."
+  })
+  @ApiOkResponse({
+    type: OptimizationRequestSummaryDto,
+    isArray: true
+  })
+  async findAll(): Promise<OptimizationRequestSummaryDto[]> {
+    return this.optimizationRequestsService.findAll();
+  }
+
+  @Get(":id")
+  @ApiOperation({
+    summary: "Get a persisted optimization request by id."
+  })
+  @ApiParam({
+    name: "id"
+  })
+  @ApiOkResponse({
+    type: OptimizationRequestDetailResponseDto
+  })
+  @ApiNotFoundResponse({
+    description: "Optimization request was not found."
+  })
+  async findById(
+    @Param("id") id: string
+  ): Promise<OptimizationRequestDetailResponseDto> {
+    return this.optimizationRequestsService.findById(id);
   }
 }

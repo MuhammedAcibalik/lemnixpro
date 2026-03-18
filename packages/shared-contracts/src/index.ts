@@ -59,6 +59,61 @@ export type CurrentUserResponse = {
   user: AuthenticatedUser;
 };
 
+export const optimizationRequestStatuses = [
+  "created",
+  "ready",
+  "failed_preparation"
+] as const;
+
+export type OptimizationRequestStatus =
+  (typeof optimizationRequestStatuses)[number];
+
+export type OptimizationMainProfileInput = {
+  id: EntityId;
+  code: string;
+  name: string;
+  linkedProductCode: string;
+  linkedProductName: string;
+  stockLengthMm: number;
+};
+
+export type OptimizationDemandRow = {
+  productionRowId: EntityId;
+  rowIndex: number;
+  mainProfileId: EntityId;
+  mainProfileCode: string;
+  customerName: string | null;
+  orderingPartyCode: string | null;
+  customerOrderNumber: string | null;
+  customerOrderItemNumber: string | null;
+  workOrderNumber: string | null;
+  materialCode: string;
+  materialName: string | null;
+  quantity: number;
+  orderUnit: string;
+  plannedFinishDate: string | null;
+  departmentCode: string | null;
+  priority: string | null;
+};
+
+export type OptimizationRequestPayload = {
+  weekNumber: number;
+  sourceBatchId: EntityId;
+  mainProfiles: OptimizationMainProfileInput[];
+  demandRows: OptimizationDemandRow[];
+};
+
+export type OptimizationRequestSummary = {
+  id: EntityId;
+  weekNumber: number;
+  sourceBatchId: EntityId;
+  status: OptimizationRequestStatus;
+  matchedRows: number;
+  unmatchedRows: number;
+  createdAt: UtcTimestamp;
+  updatedAt: UtcTimestamp;
+};
+
 export type OptimizationRequestedMessage = {
   jobId: EntityId;
   weekCode: string;

@@ -1,10 +1,14 @@
-import { drizzle } from "drizzle-orm/node-postgres";
+import { drizzle, type NodePgDatabase } from "drizzle-orm/node-postgres";
 import { Pool } from "pg";
 
-export function createDatabaseClient(connectionString: string) {
-  const pool = new Pool({
-    connectionString
-  });
+import * as schema from "./schema";
 
-  return drizzle(pool);
+export type OptimizationOrchestratorDatabase = NodePgDatabase<typeof schema>;
+
+export function createDatabaseClient(
+  pool: Pool
+): OptimizationOrchestratorDatabase {
+  return drizzle(pool, {
+    schema
+  });
 }

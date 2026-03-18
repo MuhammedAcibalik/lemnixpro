@@ -1,4 +1,11 @@
-import { Inject, Injectable } from "@nestjs/common";
+import {
+  Inject,
+  Injectable,
+  NotFoundException,
+  UnprocessableEntityException
+} from "@nestjs/common";
+
+import type { OptimizationRequestStatus } from "@lemnixpro/shared-contracts";
 
 import {
   MainProfileResponse,
@@ -9,15 +16,24 @@ import {
   ProductionPlanClient,
   ProductionPlanImportBatchSummary
 } from "../../infrastructure/http/production-plan.client";
+import type { OptimizationRequestRecord } from "../../infrastructure/db/schema";
 
-import type { CreateOptimizationDryRunRequestDto } from "./dto/create-optimization-dry-run-request.dto";
+import type { CreateOptimizationRequestDto } from "./dto/create-optimization-request.dto";
 import type {
+  OptimizationDemandRowDto,
   OptimizationDryRunResponseDto,
-  OptimizationDryRunUnmatchedReasonCode,
-  OptimizationDryRunUnmatchedRowDto,
-  OptimizationRequestPreviewDemandRowDto,
-  OptimizationRequestPreviewMainProfileDto
+  OptimizationMainProfileInputDto,
+  OptimizationPreparationUnmatchedReasonCode,
+  OptimizationPreparationUnmatchedRowDto,
+  OptimizationRequestPayloadDto,
+  OptimizationUnmatchedSummaryDto
 } from "./dto/optimization-dry-run-response.dto";
+import type {
+  CreateOptimizationRequestResponseDto,
+  OptimizationRequestDetailResponseDto,
+  OptimizationRequestSummaryDto
+} from "./dto/optimization-request-response.dto";
+import { OptimizationRequestsRepository } from "./optimization-requests.repository";
 
 type RowEvaluationResult =
   | {
@@ -26,8 +42,19 @@ type RowEvaluationResult =
     }
   | {
       matchedProfile: null;
-      unmatchedRow: OptimizationDryRunUnmatchedRowDto;
+      unmatchedRow: OptimizationPreparationUnmatchedRowDto;
     };
+
+type PreparedOptimizationRequest = {
+  weekNumber: number;
+  activeBatch: OptimizationDryRunResponseDto["activeBatch"];
+  totalProductionRows: number;
+  matchedRows: number;
+  unmatchedRows: number;
+  rowsMissingMasterDataLinkage: number;
+  unmatchedReasons: OptimizationPreparationUnmatchedRowDto[];
+  payloadPreview: OptimizationRequestPayloadDto;
+};
 
 @Injectable()
 export class OptimizationRequestsService {
@@ -35,26 +62,90 @@ export class OptimizationRequestsService {
     @Inject(ProductionPlanClient)
     private readonly productionPlanClient: ProductionPlanClient,
     @Inject(MasterDataClient)
-    private readonly masterDataClient: MasterDataClient
+    private readonly masterDataClient: MasterDataClient,
+    @Inject(OptimizationRequestsRepository)
+    private readonly optimizationRequestsRepository: OptimizationRequestsRepository
   ) {}
 
   async createDryRun(
-    request: CreateOptimizationDryRunRequestDto
+    request: CreateOptimizationRequestDto
   ): Promise<OptimizationDryRunResponseDto> {
+    const preparedRequest = await this.prepareOptimizationRequest(request);
+
+    return {
+      weekNumber: preparedRequest.weekNumber,
+      activeBatch: preparedRequest.activeBatch,
+      totalProductionRows: preparedRequest.totalProductionRows,
+      masterDataCountUsed: preparedRequest.payloadPreview.mainProfiles.length,
+      matchedRows: preparedRequest.matchedRows,
+      unmatchedRows: preparedRequest.unmatchedRows,
+      rowsMissingMasterDataLinkage:
+        preparedRequest.rowsMissingMasterDataLinkage,
+      unmatchedReasons: preparedRequest.unmatchedReasons,
+      optimizationRequestPreview: preparedRequest.payloadPreview
+    };
+  }
+
+  async createRequest(
+    request: CreateOptimizationRequestDto
+  ): Promise<CreateOptimizationRequestResponseDto> {
+    const preparedRequest = await this.prepareOptimizationRequest(request);
+    const status = this.resolveRequestStatus(preparedRequest);
+    const persistedRequest = await this.optimizationRequestsRepository.create({
+      weekNumber: preparedRequest.weekNumber,
+      sourceBatchId: preparedRequest.payloadPreview.sourceBatchId,
+      status,
+      payloadJson: preparedRequest.payloadPreview,
+      matchedRows: preparedRequest.matchedRows,
+      unmatchedRows: preparedRequest.unmatchedRows
+    });
+    const response = this.toCreateRequestResponse(
+      persistedRequest,
+      preparedRequest
+    );
+
+    if (status === "failed_preparation") {
+      throw new UnprocessableEntityException({
+        message: `Optimization request for week "${request.weekNumber}" could not be prepared because no optimization-ready rows were available.`,
+        ...response
+      });
+    }
+
+    return response;
+  }
+
+  async findAll(): Promise<OptimizationRequestSummaryDto[]> {
+    const requests = await this.optimizationRequestsRepository.findAll();
+
+    return requests.map((request) => this.toRequestSummary(request));
+  }
+
+  async findById(id: string): Promise<OptimizationRequestDetailResponseDto> {
+    const request = await this.optimizationRequestsRepository.findById(id);
+
+    if (!request) {
+      throw new NotFoundException(`Optimization request "${id}" was not found.`);
+    }
+
+    return {
+      request: this.toRequestSummary(request),
+      payloadPreview: request.payloadJson
+    };
+  }
+
+  private async prepareOptimizationRequest(
+    request: CreateOptimizationRequestDto
+  ): Promise<PreparedOptimizationRequest> {
     const [activeBatchRows, mainProfiles] = await Promise.all([
       this.productionPlanClient.getActiveBatchRowsByWeekNumber(request.weekNumber),
       this.masterDataClient.getMainProfiles()
     ]);
-
     const activeMainProfiles = mainProfiles.filter((profile) => profile.isActive);
     const mainProfilesByLinkedProductCode =
       this.groupMainProfilesByLinkedProductCode(activeMainProfiles);
-    const unmatchedRows: OptimizationDryRunUnmatchedRowDto[] = [];
-    const previewDemandRows: OptimizationRequestPreviewDemandRowDto[] = [];
-    const previewMainProfilesById = new Map<
-      string,
-      OptimizationRequestPreviewMainProfileDto
-    >();
+    const unmatchedRows: OptimizationPreparationUnmatchedRowDto[] = [];
+    const demandRows: OptimizationDemandRowDto[] = [];
+    const mainProfilesById = new Map<string, OptimizationMainProfileInputDto>();
 
     for (const row of activeBatchRows.rows) {
       const evaluation = this.evaluateRow(
@@ -67,16 +158,14 @@ export class OptimizationRequestsService {
         continue;
       }
 
-      previewDemandRows.push(
-        this.toPreviewDemandRow(row, evaluation.matchedProfile)
-      );
-      previewMainProfilesById.set(
+      demandRows.push(this.toDemandRow(row, evaluation.matchedProfile));
+      mainProfilesById.set(
         evaluation.matchedProfile.id,
-        this.toPreviewMainProfile(evaluation.matchedProfile)
+        this.toMainProfileInput(evaluation.matchedProfile)
       );
     }
 
-    const previewMainProfiles = [...previewMainProfilesById.values()].sort((left, right) =>
+    const mainProfileInputs = [...mainProfilesById.values()].sort((left, right) =>
       left.code.localeCompare(right.code)
     );
 
@@ -84,19 +173,61 @@ export class OptimizationRequestsService {
       weekNumber: request.weekNumber,
       activeBatch: this.toActiveBatchSummary(activeBatchRows.batch),
       totalProductionRows: activeBatchRows.rows.length,
-      masterDataCountUsed: previewMainProfiles.length,
-      matchedRows: previewDemandRows.length,
+      matchedRows: demandRows.length,
       unmatchedRows: unmatchedRows.length,
       rowsMissingMasterDataLinkage: unmatchedRows.filter((row) =>
         row.reasons.some((reason) => this.isMasterDataLinkageReason(reason))
       ).length,
       unmatchedReasons: unmatchedRows,
-      optimizationRequestPreview: {
+      payloadPreview: {
         weekNumber: request.weekNumber,
-        activeBatchId: activeBatchRows.batch.id,
-        mainProfiles: previewMainProfiles,
-        demandRows: previewDemandRows
+        sourceBatchId: activeBatchRows.batch.id,
+        mainProfiles: mainProfileInputs,
+        demandRows
       }
+    };
+  }
+
+  private resolveRequestStatus(
+    preparedRequest: PreparedOptimizationRequest
+  ): OptimizationRequestStatus {
+    return preparedRequest.matchedRows > 0 ? "ready" : "failed_preparation";
+  }
+
+  private toCreateRequestResponse(
+    persistedRequest: OptimizationRequestRecord,
+    preparedRequest: PreparedOptimizationRequest
+  ): CreateOptimizationRequestResponseDto {
+    return {
+      request: this.toRequestSummary(persistedRequest),
+      payloadPreview: preparedRequest.payloadPreview,
+      unmatchedSummary: this.toUnmatchedSummary(preparedRequest)
+    };
+  }
+
+  private toRequestSummary(
+    request: OptimizationRequestRecord
+  ): OptimizationRequestSummaryDto {
+    return {
+      id: request.id,
+      weekNumber: request.weekNumber,
+      sourceBatchId: request.sourceBatchId,
+      status: request.status,
+      matchedRows: request.matchedRows,
+      unmatchedRows: request.unmatchedRows,
+      createdAt: request.createdAt,
+      updatedAt: request.updatedAt
+    };
+  }
+
+  private toUnmatchedSummary(
+    preparedRequest: PreparedOptimizationRequest
+  ): OptimizationUnmatchedSummaryDto {
+    return {
+      totalUnmatchedRows: preparedRequest.unmatchedRows,
+      rowsMissingMasterDataLinkage:
+        preparedRequest.rowsMissingMasterDataLinkage,
+      unmatchedReasons: preparedRequest.unmatchedReasons
     };
   }
 
@@ -126,7 +257,7 @@ export class OptimizationRequestsService {
     row: ProductionPlanActiveBatchRow,
     mainProfilesByLinkedProductCode: Map<string, MainProfileResponse[]>
   ): RowEvaluationResult {
-    const reasons: OptimizationDryRunUnmatchedReasonCode[] = [];
+    const reasons: OptimizationPreparationUnmatchedReasonCode[] = [];
     const details: string[] = [];
     const normalizedMaterialCode = this.normalizeCode(row.materialCode);
 
@@ -206,7 +337,7 @@ export class OptimizationRequestsService {
 
     if (batch.status !== "active") {
       throw new Error(
-        `Expected an active production batch for dry run preparation, received "${batch.status}".`
+        `Expected an active production batch for optimization preparation, received "${batch.status}".`
       );
     }
 
@@ -225,9 +356,9 @@ export class OptimizationRequestsService {
     };
   }
 
-  private toPreviewMainProfile(
+  private toMainProfileInput(
     profile: MainProfileResponse
-  ): OptimizationRequestPreviewMainProfileDto {
+  ): OptimizationMainProfileInputDto {
     return {
       id: profile.id,
       code: profile.code,
@@ -238,10 +369,10 @@ export class OptimizationRequestsService {
     };
   }
 
-  private toPreviewDemandRow(
+  private toDemandRow(
     row: ProductionPlanActiveBatchRow,
     profile: MainProfileResponse
-  ): OptimizationRequestPreviewDemandRowDto {
+  ): OptimizationDemandRowDto {
     if (!row.materialCode) {
       throw new Error(
         `Expected materialCode for matched production row "${row.id}".`
@@ -291,7 +422,7 @@ export class OptimizationRequestsService {
   }
 
   private isMasterDataLinkageReason(
-    reason: OptimizationDryRunUnmatchedReasonCode
+    reason: OptimizationPreparationUnmatchedReasonCode
   ): boolean {
     return reason !== "production_row_invalid";
   }

@@ -1,14 +1,20 @@
 import { ApiProperty, ApiPropertyOptional } from "@nestjs/swagger";
 
-export const optimizationDryRunUnmatchedReasonCodes = [
+import type {
+  OptimizationDemandRow,
+  OptimizationMainProfileInput,
+  OptimizationRequestPayload
+} from "@lemnixpro/shared-contracts";
+
+export const optimizationPreparationUnmatchedReasonCodes = [
   "production_row_invalid",
   "missing_material_code",
   "missing_active_main_profile",
   "ambiguous_active_main_profile"
 ] as const;
 
-export type OptimizationDryRunUnmatchedReasonCode =
-  (typeof optimizationDryRunUnmatchedReasonCodes)[number];
+export type OptimizationPreparationUnmatchedReasonCode =
+  (typeof optimizationPreparationUnmatchedReasonCodes)[number];
 
 export class OptimizationDryRunActiveBatchSummaryDto {
   @ApiProperty()
@@ -47,7 +53,7 @@ export class OptimizationDryRunActiveBatchSummaryDto {
   updatedAt!: string;
 }
 
-export class OptimizationDryRunUnmatchedRowDto {
+export class OptimizationPreparationUnmatchedRowDto {
   @ApiProperty()
   rowId!: string;
 
@@ -65,10 +71,10 @@ export class OptimizationDryRunUnmatchedRowDto {
   workOrderNumber!: string | null;
 
   @ApiProperty({
-    enum: optimizationDryRunUnmatchedReasonCodes,
+    enum: optimizationPreparationUnmatchedReasonCodes,
     isArray: true
   })
-  reasons!: OptimizationDryRunUnmatchedReasonCode[];
+  reasons!: OptimizationPreparationUnmatchedReasonCode[];
 
   @ApiProperty({
     type: [String]
@@ -76,7 +82,9 @@ export class OptimizationDryRunUnmatchedRowDto {
   details!: string[];
 }
 
-export class OptimizationRequestPreviewMainProfileDto {
+export class OptimizationMainProfileInputDto
+  implements OptimizationMainProfileInput
+{
   @ApiProperty()
   id!: string;
 
@@ -96,7 +104,7 @@ export class OptimizationRequestPreviewMainProfileDto {
   stockLengthMm!: number;
 }
 
-export class OptimizationRequestPreviewDemandRowDto {
+export class OptimizationDemandRowDto implements OptimizationDemandRow {
   @ApiProperty()
   productionRowId!: string;
 
@@ -164,22 +172,35 @@ export class OptimizationRequestPreviewDemandRowDto {
   priority!: string | null;
 }
 
-export class OptimizationRequestPreviewDto {
+export class OptimizationRequestPayloadDto implements OptimizationRequestPayload {
   @ApiProperty()
   weekNumber!: number;
 
   @ApiProperty()
-  activeBatchId!: string;
+  sourceBatchId!: string;
 
   @ApiProperty({
-    type: () => [OptimizationRequestPreviewMainProfileDto]
+    type: () => [OptimizationMainProfileInputDto]
   })
-  mainProfiles!: OptimizationRequestPreviewMainProfileDto[];
+  mainProfiles!: OptimizationMainProfileInputDto[];
 
   @ApiProperty({
-    type: () => [OptimizationRequestPreviewDemandRowDto]
+    type: () => [OptimizationDemandRowDto]
   })
-  demandRows!: OptimizationRequestPreviewDemandRowDto[];
+  demandRows!: OptimizationDemandRowDto[];
+}
+
+export class OptimizationUnmatchedSummaryDto {
+  @ApiProperty()
+  totalUnmatchedRows!: number;
+
+  @ApiProperty()
+  rowsMissingMasterDataLinkage!: number;
+
+  @ApiProperty({
+    type: () => [OptimizationPreparationUnmatchedRowDto]
+  })
+  unmatchedReasons!: OptimizationPreparationUnmatchedRowDto[];
 }
 
 export class OptimizationDryRunResponseDto {
@@ -207,12 +228,12 @@ export class OptimizationDryRunResponseDto {
   rowsMissingMasterDataLinkage!: number;
 
   @ApiProperty({
-    type: () => [OptimizationDryRunUnmatchedRowDto]
+    type: () => [OptimizationPreparationUnmatchedRowDto]
   })
-  unmatchedReasons!: OptimizationDryRunUnmatchedRowDto[];
+  unmatchedReasons!: OptimizationPreparationUnmatchedRowDto[];
 
   @ApiProperty({
-    type: () => OptimizationRequestPreviewDto
+    type: () => OptimizationRequestPayloadDto
   })
-  optimizationRequestPreview!: OptimizationRequestPreviewDto;
+  optimizationRequestPreview!: OptimizationRequestPayloadDto;
 }

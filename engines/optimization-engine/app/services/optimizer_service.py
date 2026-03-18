@@ -7,8 +7,8 @@ class OptimizerService:
         self, request: OptimizationRequest
     ) -> OptimizationResult:
         return OptimizationResult(
-            job_id=request.job_id,
+            job_id=request.request.id,
             result_id="pending-result",
-            completed_at=request.requested_at,
+            completed_at=request.request.updated_at,
             status="not_implemented",
         )
