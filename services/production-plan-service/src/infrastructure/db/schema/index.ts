@@ -16,8 +16,9 @@ import {
 export const schemaNamespace = "production_plan";
 
 export const productionPlanImportBatchStatuses = [
-  "completed",
-  "completed_with_invalid_rows"
+  "imported",
+  "active",
+  "superseded"
 ] as const;
 
 export type ProductionPlanImportBatchStatus =
@@ -31,10 +32,15 @@ export const productionPlanImportBatches = productionPlanSchema.table(
     id: uuid("id").primaryKey().notNull(),
     fileName: varchar("file_name", { length: 255 }).notNull(),
     sheetName: varchar("sheet_name", { length: 255 }).notNull(),
+    weekNumber: integer("week_number"),
     status: varchar("status", { length: 40 }).notNull(),
     totalRowCount: integer("total_row_count").notNull(),
     validRowCount: integer("valid_row_count").notNull(),
     invalidRowCount: integer("invalid_row_count").notNull(),
+    activatedAt: timestamp("activated_at", {
+      mode: "string",
+      withTimezone: true
+    }),
     createdAt: timestamp("created_at", {
       mode: "string",
       withTimezone: true
@@ -47,7 +53,17 @@ export const productionPlanImportBatches = productionPlanSchema.table(
     })
       .notNull()
       .defaultNow()
-  }
+  },
+  (table) => ({
+    weekNumberIndex: index("production_plan_import_batches_week_number_idx").on(
+      table.weekNumber
+    ),
+    activeWeekUniqueIndex: uniqueIndex(
+      "production_plan_import_batches_active_week_unique"
+    )
+      .on(table.weekNumber)
+      .where(sql`${table.status} = 'active'`)
+  })
 );
 
 export const productionPlanRows = productionPlanSchema.table(

@@ -1,25 +1,33 @@
 # Communication
 
-## External Access
+## Active Direction
 
-- Browsers call `api-gateway-service`
-- The gateway owns web-facing HTTP contracts and upstream routing configuration
+LemnixPRO uses explicit service-to-service integration. Domain services do not communicate through shared database access or direct source imports.
 
-## Internal Sync Communication
+## User-Facing Traffic
 
-- Service-to-service synchronous calls use explicit HTTP APIs
-- Service URLs are configured through environment variables
+- Browsers load `apps/web`.
+- `apps/web` calls `api-gateway-service` for backend APIs.
+- Domain services are not exposed directly to the browser.
 
-## Internal Async Communication
+## Synchronous Service Communication
 
-- RabbitMQ carries optimization job requests and result status events
-- Initial messaging focus:
+- `api-gateway-service` calls downstream services through explicit HTTP contracts.
+- Direct service-to-service HTTP calls are allowed only when one service needs another service's owned capability or read model.
+- Service URLs and credentials are configured through environment variables owned by the caller.
+
+## Asynchronous Communication
+
+- RabbitMQ carries long-running optimization workflow messages.
+- Initial event families are:
   - optimization requested
   - optimization completed
   - optimization failed
+- Async messaging is the default path for workflows that involve the Python optimization engine.
 
-## Shared Code Rules
+## Contract and Sharing Rules
 
-- Shared DTOs, constants, and utility helpers live only in `packages/shared-*`
-- No cross-service relative imports are allowed
-- Python schemas stay local to the engine and are manually aligned with shared contracts
+- Shared transport contracts, event names, and domain-neutral helpers live in `packages/*`.
+- No cross-service relative imports are allowed.
+- No service may read or write another service's database tables.
+- The Python optimization engine keeps local Pydantic schemas aligned with shared transport contracts rather than importing TypeScript packages directly.

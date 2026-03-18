@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 
 import { Inject, Injectable } from "@nestjs/common";
-import { asc, desc, eq, sql } from "drizzle-orm";
+import { and, asc, desc, eq, sql } from "drizzle-orm";
 
 import { DATABASE_CLIENT } from "../../infrastructure/db/database.tokens";
 import type { ProductionPlanDatabase } from "../../infrastructure/db/client";
@@ -15,9 +15,28 @@ import {
 
 const INSERT_CHUNK_SIZE = 500;
 
+export class ProductionPlanImportBatchNotActivatableError extends Error {
+  constructor(batchId: string) {
+    super(
+      `Production plan import batch "${batchId}" is not eligible for activation.`
+    );
+    this.name = "ProductionPlanImportBatchNotActivatableError";
+  }
+}
+
+export class ActiveProductionPlanBatchMustRemainEligibleError extends Error {
+  constructor(batchId: string) {
+    super(
+      `Production plan import batch "${batchId}" must retain at least one valid row while active.`
+    );
+    this.name = "ActiveProductionPlanBatchMustRemainEligibleError";
+  }
+}
+
 export type CreateProductionPlanImportBatchRecord = {
   fileName: string;
   sheetName: string;
+  weekNumber: number;
   status: ProductionPlanImportBatchStatus;
   totalRowCount: number;
   validRowCount: number;
@@ -78,10 +97,12 @@ export class ProductionPlanImportsRepository {
           id: batchId,
           fileName: input.fileName,
           sheetName: input.sheetName,
+          weekNumber: input.weekNumber,
           status: input.status,
           totalRowCount: input.totalRowCount,
           validRowCount: input.validRowCount,
-          invalidRowCount: input.invalidRowCount
+          invalidRowCount: input.invalidRowCount,
+          activatedAt: null
         })
         .returning();
 
@@ -127,6 +148,26 @@ export class ProductionPlanImportsRepository {
       .orderBy(desc(productionPlanImportBatches.createdAt));
   }
 
+  async findImportBatchesByWeekNumber(
+    weekNumber: number
+  ): Promise<ProductionPlanImportBatch[]> {
+    return this.databaseClient
+      .select()
+      .from(productionPlanImportBatches)
+      .where(eq(productionPlanImportBatches.weekNumber, weekNumber))
+      .orderBy(
+        asc(sql<number>`
+          case
+            when ${productionPlanImportBatches.status} = 'active' then 0
+            when ${productionPlanImportBatches.status} = 'imported' then 1
+            when ${productionPlanImportBatches.status} = 'superseded' then 2
+            else 3
+          end
+        `),
+        desc(productionPlanImportBatches.createdAt)
+      );
+  }
+
   async findImportBatchById(id: string): Promise<ProductionPlanImportBatch | null> {
     const [batch] = await this.databaseClient
       .select()
@@ -135,6 +176,74 @@ export class ProductionPlanImportsRepository {
       .limit(1);
 
     return batch ?? null;
+  }
+
+  async findActiveBatchByWeekNumber(
+    weekNumber: number
+  ): Promise<ProductionPlanImportBatch | null> {
+    const [batch] = await this.databaseClient
+      .select()
+      .from(productionPlanImportBatches)
+      .where(
+        and(
+          eq(productionPlanImportBatches.weekNumber, weekNumber),
+          eq(productionPlanImportBatches.status, "active")
+        )
+      )
+      .limit(1);
+
+    return batch ?? null;
+  }
+
+  async activateBatchById(id: string): Promise<ProductionPlanImportBatch | null> {
+    return this.databaseClient.transaction(async (transaction) => {
+      const [targetBatch] = await transaction
+        .select()
+        .from(productionPlanImportBatches)
+        .where(eq(productionPlanImportBatches.id, id))
+        .limit(1);
+
+      if (!targetBatch) {
+        return null;
+      }
+
+      if (targetBatch.status === "active") {
+        return targetBatch;
+      }
+
+      if (targetBatch.weekNumber === null || targetBatch.validRowCount <= 0) {
+        throw new ProductionPlanImportBatchNotActivatableError(id);
+      }
+
+      await transaction
+        .update(productionPlanImportBatches)
+        .set({
+          status: "superseded",
+          updatedAt: sql`now()`
+        })
+        .where(
+          and(
+            eq(productionPlanImportBatches.weekNumber, targetBatch.weekNumber),
+            eq(productionPlanImportBatches.status, "active")
+          )
+        );
+
+      const [activatedBatch] = await transaction
+        .update(productionPlanImportBatches)
+        .set({
+          status: "active",
+          activatedAt: sql`now()`,
+          updatedAt: sql`now()`
+        })
+        .where(eq(productionPlanImportBatches.id, id))
+        .returning();
+
+      if (!activatedBatch) {
+        throw new Error(`Failed to activate production plan batch "${id}".`);
+      }
+
+      return activatedBatch;
+    });
   }
 
   async findRowsByBatchId(batchId: string): Promise<ProductionPlanRow[]> {
@@ -160,6 +269,28 @@ export class ProductionPlanImportsRepository {
     input: UpdateProductionPlanRowRecord
   ): Promise<UpdateProductionPlanRowResult | null> {
     return this.databaseClient.transaction(async (transaction) => {
+      const [existingRow] = await transaction
+        .select()
+        .from(productionPlanRows)
+        .where(eq(productionPlanRows.id, id))
+        .limit(1);
+
+      if (!existingRow) {
+        return null;
+      }
+
+      const [existingBatch] = await transaction
+        .select()
+        .from(productionPlanImportBatches)
+        .where(eq(productionPlanImportBatches.id, existingRow.batchId))
+        .limit(1);
+
+      if (!existingBatch) {
+        throw new Error(
+          `Failed to load production plan batch "${existingRow.batchId}".`
+        );
+      }
+
       const [updatedRow] = await transaction
         .update(productionPlanRows)
         .set({
@@ -202,8 +333,12 @@ export class ProductionPlanImportsRepository {
       const invalidRowCount = summary?.invalidRowCount ?? 0;
       const validRowCount = summary?.validRowCount ?? 0;
       const totalRowCount = summary?.totalRowCount ?? 0;
-      const status: ProductionPlanImportBatchStatus =
-        invalidRowCount > 0 ? "completed_with_invalid_rows" : "completed";
+
+      if (existingBatch.status === "active" && validRowCount === 0) {
+        throw new ActiveProductionPlanBatchMustRemainEligibleError(
+          existingBatch.id
+        );
+      }
 
       const [updatedBatch] = await transaction
         .update(productionPlanImportBatches)
@@ -211,7 +346,6 @@ export class ProductionPlanImportsRepository {
           totalRowCount,
           validRowCount,
           invalidRowCount,
-          status,
           updatedAt: sql`now()`
         })
         .where(eq(productionPlanImportBatches.id, updatedRow.batchId))

@@ -4,7 +4,7 @@ import { IsOptional, IsString, MaxLength } from "class-validator";
 
 function normalizeOptionalScalarInput(
   value: unknown
-): string | null | undefined | unknown {
+): unknown {
   if (value === undefined) {
     return undefined;
   }
@@ -27,13 +27,6 @@ function normalizeOptionalScalarInput(
 }
 
 export class UpdateProductionPlanRowRequestDto {
-  @ApiPropertyOptional()
-  @Transform(({ value }) => normalizeOptionalScalarInput(value))
-  @IsOptional()
-  @IsString()
-  @MaxLength(100)
-  weekRaw?: string | null;
-
   @ApiPropertyOptional()
   @Transform(({ value }) => normalizeOptionalScalarInput(value))
   @IsOptional()

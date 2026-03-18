@@ -1,3 +1,12 @@
+# STACK DECISION
+
+> [!IMPORTANT]
+> Superseded on 2026-03-18.
+> This document records an earlier recommendation to build LemnixPRO as a TypeScript modular monolith.
+> It is historical context only and must not be used as the active implementation direction.
+> The active direction is a backend-first microservices monorepo with a thin web shell, NestJS services, shared workspace packages, and a separate Python optimization engine using Google OR-Tools.
+> See `PROJECT_BRIEF.md`, `BACKEND_ARCHITECTURE.md`, and `docs/architecture/*` for the current source of truth.
+
 \# STACK DECISION
 
 

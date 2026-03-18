@@ -1,42 +1,72 @@
 # LemnixPRO
 
-Backend-first enterprise platform for 1D aluminum cutting optimization.
+LemnixPRO is an internal enterprise web platform for 1D aluminum cutting optimization. It supports authenticated planning workflows, aluminum profile master data, weekly production plan imports, and a separate optimization engine path built around Google OR-Tools.
 
-## Repository Layout
+## Active Architecture
 
-- `apps/web`: Next.js shell for the internal web interface
-- `services/*`: NestJS microservices with explicit domain ownership
-- `packages/*`: shared workspace types, contracts, and utilities
-- `engines/optimization-engine`: Python FastAPI + OR-Tools engine scaffold
-- `infra/*`: local infrastructure manifests and Docker assets
-- `docs/*`: architecture, domain, and API documentation
+This repository follows a backend-first microservices monorepo architecture.
 
-## Current Status
+- `apps/web` is the internal Next.js web shell.
+- `services/*` contains NestJS domain services with explicit ownership boundaries.
+- `packages/*` contains shared contracts, shared types, and domain-neutral utilities only.
+- `engines/optimization-engine` is the separate Python optimization service.
+- `infra/*` contains local infrastructure bootstrap assets.
+- `docs/*` contains active architecture guidance and historical records.
 
-Foundation migration in progress. The repository is structured as a `pnpm` workspace monorepo with backend-first service scaffolding, local infra definitions, and a minimal web shell.
+Earlier monolith-oriented recommendations are superseded and kept only as historical context in `STACK_DECISION.md`.
 
-## Core Boundaries
+## Top-Level Ownership
 
-- External traffic enters through `api-gateway-service`
-- Service-to-service data ownership stays isolated by schema
-- Async optimization workflows flow through RabbitMQ
-- Shared code is limited to `packages/shared-*`
-- Python keeps its own local schemas and does not import TypeScript packages
+- `apps`: user-facing applications and shell experiences; no service-owned persistence.
+- `services`: deployable backend services that own APIs, workflows, and persistence.
+- `packages`: reusable contracts, primitives, and domain-neutral technical utilities.
+- `engines`: non-Node execution services, currently the Python optimization engine.
+- `infra`: Dockerfiles, compose manifests, and local infrastructure bootstrap.
+- `docs`: architecture, contracts, domain notes, and superseded decisions.
 
-## Quick Start
+## Current Implemented Slices
 
-1. `pnpm install`
-2. `python -m pip install -e engines/optimization-engine`
-3. `pnpm infra:up`
-4. `pnpm typecheck`
-5. `pnpm build`
+The currently implemented backend slices are:
 
-`production-plan-service` requires `DATABASE_URL` explicitly. When using `infra/compose/docker-compose.backend.yml`, point it at the host port published by the `postgres` service. The compose file defaults `POSTGRES_PORT` to `5432`, but some local repo setups override it to `5433`, for example `postgresql://postgres:postgres@localhost:5433/lemnixpro`.
+- `identity/auth`
+- `main profile master data`
+- `weekly production plan import`
 
-## Architecture Notes
+Cut list management, optimization orchestration, optimization results, and the full optimization engine integration remain planned architecture slices and should not be treated as completed product scope yet.
 
-- `BACKEND_ARCHITECTURE.md`
-- `docs/architecture/service-map.md`
-- `docs/architecture/communication.md`
-- `docs/architecture/database-ownership.md`
+## Local Prerequisites
+
+- Node.js `22.x`
+- `pnpm` `10.6.2`
+- Python `3.12`
+- Docker with Compose v2
+
+## Bootstrap
+
+1. Review `.env.example` for root-level local infrastructure defaults.
+2. Run `pnpm install`.
+3. Run `python -m pip install -e engines/optimization-engine`.
+4. Run `pnpm infra:up`.
+5. Run `pnpm dev`.
+
+## Workspace Commands
+
+- `pnpm dev`: run available app and service development scripts in parallel.
+- `pnpm build`: build all Node workspace packages.
+- `pnpm typecheck`: typecheck all Node workspace packages.
+- `pnpm lint`: lint all workspace packages that expose a lint script.
+- `pnpm test`: run workspace tests.
+- `pnpm infra:up`: start local PostgreSQL and RabbitMQ.
+- `pnpm infra:down`: stop local infrastructure.
+- `pnpm infra:logs`: follow local infrastructure logs.
+- `pnpm infra:config`: render the effective Compose configuration.
+
+## Infra Expectations
+
+- Local infrastructure is defined in `infra/compose/docker-compose.backend.yml`.
+- The shared local stack provides PostgreSQL 16 and RabbitMQ for service development.
+- Each DB-owning service manages its own PostgreSQL schema and migrations.
+- Browser-facing backend traffic should terminate at `api-gateway-service`.
+- Internal synchronous communication uses explicit HTTP APIs, and long-running optimization workflows use RabbitMQ.
+- The Python optimization engine is a separate runtime and is not part of the `pnpm` workspace.
 

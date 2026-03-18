@@ -19,14 +19,18 @@ type QueryablePool = {
   end(): Promise<void>;
 };
 
+type BatchStatus = "imported" | "active" | "superseded";
+
 type ProductionPlanImportBatchResponse = {
   id: string;
   fileName: string;
   sheetName: string;
-  status: "completed" | "completed_with_invalid_rows";
+  weekNumber: number | null;
+  status: BatchStatus;
   totalRowCount: number;
   validRowCount: number;
   invalidRowCount: number;
+  activatedAt: string | null;
   createdAt: string;
   updatedAt: string;
 };
@@ -60,10 +64,12 @@ type ProductionPlanImportBatchRow = {
   id: string;
   file_name: string;
   sheet_name: string;
-  status: "completed" | "completed_with_invalid_rows";
+  week_number: number | null;
+  status: BatchStatus;
   total_row_count: number;
   valid_row_count: number;
   invalid_row_count: number;
+  activated_at: string | Date | null;
   created_at: string | Date;
   updated_at: string | Date;
 };
@@ -72,7 +78,7 @@ type ProductionPlanRowRecord = {
   id: string;
   batch_id: string;
   row_index: number;
-  source_row_json: Record<string, unknown>;
+  source_row_json: Record<string, unknown> | string;
   week_raw: string | null;
   week_number: number | null;
   customer_name: string | null;
@@ -88,15 +94,27 @@ type ProductionPlanRowRecord = {
   department_code: string | null;
   priority: string | null;
   is_valid: boolean;
-  validation_errors: string[];
+  validation_errors: string[] | string;
   created_at: string | Date;
   updated_at: string | Date;
 };
 
+type RepositoryErrorClasses = {
+  ActiveProductionPlanBatchMustRemainEligibleError: new (
+    batchId: string
+  ) => Error;
+  ProductionPlanImportBatchNotActivatableError: new (
+    batchId: string
+  ) => Error;
+};
+
 type ProductionPlanImportsRepositoryShape = Pick<
   ProductionPlanImportsRepository,
+  | "activateBatchById"
   | "createImportBatch"
+  | "findActiveBatchByWeekNumber"
   | "findImportBatches"
+  | "findImportBatchesByWeekNumber"
   | "findImportBatchById"
   | "findRowsByBatchId"
   | "findRowById"
@@ -110,6 +128,8 @@ describe("production-plan-service imports", () => {
   let ProductionPlanImportsController: typeof import("../src/modules/production-plan/production-plan-imports.controller").ProductionPlanImportsController;
   let ProductionPlanImportsRepository: typeof import("../src/modules/production-plan/production-plan-imports.repository").ProductionPlanImportsRepository;
   let ProductionPlanImportsService: typeof import("../src/modules/production-plan/production-plan-imports.service").ProductionPlanImportsService;
+  let ActiveProductionPlanBatchMustRemainEligibleError: typeof import("../src/modules/production-plan/production-plan-imports.repository").ActiveProductionPlanBatchMustRemainEligibleError;
+  let ProductionPlanImportBatchNotActivatableError: typeof import("../src/modules/production-plan/production-plan-imports.repository").ProductionPlanImportBatchNotActivatableError;
 
   beforeEach(async () => {
     process.env.SERVICE_NAME = "production-plan-service";
@@ -126,7 +146,11 @@ describe("production-plan-service imports", () => {
     ({ ProductionPlanImportsController } = await import(
       "../src/modules/production-plan/production-plan-imports.controller"
     ));
-    ({ ProductionPlanImportsRepository } = await import(
+    ({
+      ActiveProductionPlanBatchMustRemainEligibleError,
+      ProductionPlanImportBatchNotActivatableError,
+      ProductionPlanImportsRepository
+    } = await import(
       "../src/modules/production-plan/production-plan-imports.repository"
     ));
     ({ ProductionPlanImportsService } = await import(
@@ -146,7 +170,10 @@ describe("production-plan-service imports", () => {
 
     await createDatabaseSchema(memoryPool);
 
-    const productionPlanImportsRepository = createRepositoryDouble(memoryPool);
+    const productionPlanImportsRepository = createRepositoryDouble(memoryPool, {
+      ActiveProductionPlanBatchMustRemainEligibleError,
+      ProductionPlanImportBatchNotActivatableError
+    });
 
     const moduleRef = await Test.createTestingModule({
       controllers: [ProductionPlanImportsController],
@@ -178,7 +205,7 @@ describe("production-plan-service imports", () => {
     }
   });
 
-  it("imports a valid workbook, persists mixed-validity rows, and recomputes batch summary after patch", async () => {
+  it("imports a valid workbook, assigns an authoritative batch week, and keeps imported lifecycle after row corrections", async () => {
     const httpServer = app.getHttpServer() as Parameters<typeof request>[0];
     const workbookBuffer = createWorkbookBuffer({
       "Weekly Plan": [
@@ -230,10 +257,12 @@ describe("production-plan-service imports", () => {
 
     expect(createdBatch.fileName).toBe("weekly-production-plan.xlsx");
     expect(createdBatch.sheetName).toBe("Weekly Plan");
+    expect(createdBatch.weekNumber).toBe(12);
     expect(createdBatch.totalRowCount).toBe(5);
     expect(createdBatch.validRowCount).toBe(4);
     expect(createdBatch.invalidRowCount).toBe(1);
-    expect(createdBatch.status).toBe("completed_with_invalid_rows");
+    expect(createdBatch.status).toBe("imported");
+    expect(createdBatch.activatedAt).toBeNull();
 
     const listResponse = await request(httpServer)
       .get("/production-plan-imports")
@@ -244,9 +273,12 @@ describe("production-plan-service imports", () => {
     expect(listedBatches[0]).toMatchObject({
       id: createdBatch.id,
       fileName: "weekly-production-plan.xlsx",
+      weekNumber: 12,
       totalRowCount: 5,
       validRowCount: 4,
-      invalidRowCount: 1
+      invalidRowCount: 1,
+      status: "imported",
+      activatedAt: null
     });
 
     const detailResponse = await request(httpServer)
@@ -258,10 +290,12 @@ describe("production-plan-service imports", () => {
       id: createdBatch.id,
       fileName: "weekly-production-plan.xlsx",
       sheetName: "Weekly Plan",
+      weekNumber: 12,
       totalRowCount: 5,
       validRowCount: 4,
       invalidRowCount: 1,
-      status: "completed_with_invalid_rows"
+      status: "imported",
+      activatedAt: null
     });
 
     const rowsResponse = await request(httpServer)
@@ -332,10 +366,12 @@ describe("production-plan-service imports", () => {
 
     expect(updatedBatchDetail).toMatchObject({
       id: createdBatch.id,
+      weekNumber: 12,
       totalRowCount: 5,
       validRowCount: 5,
       invalidRowCount: 0,
-      status: "completed"
+      status: "imported",
+      activatedAt: null
     });
   });
 
@@ -380,9 +416,12 @@ describe("production-plan-service imports", () => {
     const createdBatch = response.body as ProductionPlanImportBatchResponse;
 
     expect(createdBatch.sheetName).toBe("Plan Data");
+    expect(createdBatch.weekNumber).toBe(12);
     expect(createdBatch.totalRowCount).toBe(1);
     expect(createdBatch.validRowCount).toBe(1);
     expect(createdBatch.invalidRowCount).toBe(0);
+    expect(createdBatch.status).toBe("imported");
+    expect(createdBatch.activatedAt).toBeNull();
   });
 
   it("rejects uploads that exceed the maximum non-blank data row limit", async () => {
@@ -413,27 +452,455 @@ describe("production-plan-service imports", () => {
 
     expect(response.body.message).toContain("maximum of 10000 data rows");
   });
+
+  it("rejects imports with conflicting resolved week numbers", async () => {
+    const httpServer = app.getHttpServer() as Parameters<typeof request>[0];
+    const workbookBuffer = createWorkbookBuffer({
+      "Weekly Plan": [
+        buildRequiredHeaders(),
+        buildProductionPlanRow({ week: "12" }),
+        buildProductionPlanRow({
+          week: "13",
+          customerOrderNumber: "000124",
+          workOrderNumber: "WO-002"
+        })
+      ]
+    });
+
+    const response = await request(httpServer)
+      .post("/production-plan-imports")
+      .attach("file", workbookBuffer, {
+        filename: "conflicting-weeks.xlsx",
+        contentType:
+          "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+      })
+      .expect(400);
+
+    expect(response.body.message).toContain("conflicting week numbers");
+
+    const listResponse = await request(httpServer)
+      .get("/production-plan-imports")
+      .expect(200);
+
+    expect(listResponse.body).toEqual([]);
+  });
+
+  it("rejects imports without any resolved week number", async () => {
+    const httpServer = app.getHttpServer() as Parameters<typeof request>[0];
+    const workbookBuffer = createWorkbookBuffer({
+      "Weekly Plan": [
+        buildRequiredHeaders(),
+        buildProductionPlanRow({
+          week: "abc",
+          quantity: "25"
+        })
+      ]
+    });
+
+    const response = await request(httpServer)
+      .post("/production-plan-imports")
+      .attach("file", workbookBuffer, {
+        filename: "missing-week.xlsx",
+        contentType:
+          "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+      })
+      .expect(400);
+
+    expect(response.body.message).toContain(
+      "must resolve exactly one authoritative week number"
+    );
+  });
+
+  it("activates eligible batches, keeps activation idempotent, and allows reactivating superseded batches", async () => {
+    const httpServer = app.getHttpServer() as Parameters<typeof request>[0];
+    const batchOne = await createImport(
+      httpServer,
+      {
+        "Weekly Plan": [buildRequiredHeaders(), buildProductionPlanRow()]
+      },
+      "week-12-batch-one.xlsx"
+    );
+    const batchTwo = await createImport(
+      httpServer,
+      {
+        "Weekly Plan": [
+          buildRequiredHeaders(),
+          buildProductionPlanRow({
+            customerOrderNumber: "000124",
+            workOrderNumber: "WO-002"
+          })
+        ]
+      },
+      "week-12-batch-two.xlsx"
+    );
+
+    await request(httpServer)
+      .get("/production-plan-weeks/12/active-batch")
+      .expect(404);
+
+    const firstActivationResponse = await request(httpServer)
+      .post(`/production-plan-imports/${batchOne.id}/activate`)
+      .expect(200);
+    const firstActivation =
+      firstActivationResponse.body as ProductionPlanImportBatchResponse;
+
+    expect(firstActivation).toMatchObject({
+      id: batchOne.id,
+      weekNumber: 12,
+      fileName: "week-12-batch-one.xlsx",
+      sheetName: "Weekly Plan",
+      status: "active",
+      totalRowCount: 1,
+      validRowCount: 1,
+      invalidRowCount: 0
+    });
+    expect(firstActivation.activatedAt).toBeTruthy();
+
+    const idempotentActivationResponse = await request(httpServer)
+      .post(`/production-plan-imports/${batchOne.id}/activate`)
+      .expect(200);
+    const idempotentActivation =
+      idempotentActivationResponse.body as ProductionPlanImportBatchResponse;
+
+    expect(idempotentActivation).toEqual(firstActivation);
+
+    const activeBatchAfterFirstActivationResponse = await request(httpServer)
+      .get("/production-plan-weeks/12/active-batch")
+      .expect(200);
+    const activeBatchAfterFirstActivation =
+      activeBatchAfterFirstActivationResponse.body as ProductionPlanImportBatchResponse;
+
+    expect(activeBatchAfterFirstActivation).toMatchObject({
+      id: batchOne.id,
+      weekNumber: 12,
+      fileName: "week-12-batch-one.xlsx",
+      sheetName: "Weekly Plan",
+      status: "active",
+      totalRowCount: 1,
+      validRowCount: 1,
+      invalidRowCount: 0,
+      activatedAt: firstActivation.activatedAt,
+      createdAt: batchOne.createdAt
+    });
+
+    const secondActivationResponse = await request(httpServer)
+      .post(`/production-plan-imports/${batchTwo.id}/activate`)
+      .expect(200);
+    const secondActivation =
+      secondActivationResponse.body as ProductionPlanImportBatchResponse;
+
+    expect(secondActivation).toMatchObject({
+      id: batchTwo.id,
+      weekNumber: 12,
+      status: "active"
+    });
+    expect(secondActivation.activatedAt).not.toBe(firstActivation.activatedAt);
+
+    const batchesAfterSwapResponse = await request(httpServer)
+      .get("/production-plan-weeks/12/batches")
+      .expect(200);
+    const batchesAfterSwap =
+      batchesAfterSwapResponse.body as ProductionPlanImportBatchResponse[];
+
+    expect(batchesAfterSwap.map((batch) => batch.id)).toEqual([
+      batchTwo.id,
+      batchOne.id
+    ]);
+    expect(batchesAfterSwap.map((batch) => batch.status)).toEqual([
+      "active",
+      "superseded"
+    ]);
+
+    const reactivationResponse = await request(httpServer)
+      .post(`/production-plan-imports/${batchOne.id}/activate`)
+      .expect(200);
+    const reactivatedBatch =
+      reactivationResponse.body as ProductionPlanImportBatchResponse;
+
+    expect(reactivatedBatch).toMatchObject({
+      id: batchOne.id,
+      status: "active"
+    });
+    expect(reactivatedBatch.activatedAt).not.toBe(firstActivation.activatedAt);
+
+    const activeBatchAfterReactivationResponse = await request(httpServer)
+      .get("/production-plan-weeks/12/active-batch")
+      .expect(200);
+    const activeBatchAfterReactivation =
+      activeBatchAfterReactivationResponse.body as ProductionPlanImportBatchResponse;
+
+    expect(activeBatchAfterReactivation).toMatchObject({
+      id: batchOne.id,
+      weekNumber: 12,
+      fileName: "week-12-batch-one.xlsx",
+      status: "active"
+    });
+  });
+
+  it("orders week batches by lifecycle importance and recency within the same status", async () => {
+    const httpServer = app.getHttpServer() as Parameters<typeof request>[0];
+    const supersededBatch = await createImport(
+      httpServer,
+      {
+        "Weekly Plan": [buildRequiredHeaders(), buildProductionPlanRow()]
+      },
+      "week-12-superseded.xlsx"
+    );
+    const activeBatch = await createImport(
+      httpServer,
+      {
+        "Weekly Plan": [
+          buildRequiredHeaders(),
+          buildProductionPlanRow({
+            customerOrderNumber: "000124",
+            workOrderNumber: "WO-002"
+          })
+        ]
+      },
+      "week-12-active.xlsx"
+    );
+
+    await request(httpServer)
+      .post(`/production-plan-imports/${supersededBatch.id}/activate`)
+      .expect(200);
+    await request(httpServer)
+      .post(`/production-plan-imports/${activeBatch.id}/activate`)
+      .expect(200);
+
+    const olderImportedBatch = await createImport(
+      httpServer,
+      {
+        "Weekly Plan": [
+          buildRequiredHeaders(),
+          buildProductionPlanRow({
+            customerOrderNumber: "000125",
+            workOrderNumber: "WO-003"
+          })
+        ]
+      },
+      "week-12-imported-older.xlsx"
+    );
+    const newerImportedBatch = await createImport(
+      httpServer,
+      {
+        "Weekly Plan": [
+          buildRequiredHeaders(),
+          buildProductionPlanRow({
+            customerOrderNumber: "000126",
+            workOrderNumber: "WO-004"
+          })
+        ]
+      },
+      "week-12-imported-newer.xlsx"
+    );
+
+    const response = await request(httpServer)
+      .get("/production-plan-weeks/12/batches")
+      .expect(200);
+    const batches = response.body as ProductionPlanImportBatchResponse[];
+
+    expect(batches.map((batch) => batch.id)).toEqual([
+      activeBatch.id,
+      newerImportedBatch.id,
+      olderImportedBatch.id,
+      supersededBatch.id
+    ]);
+    expect(batches.map((batch) => batch.status)).toEqual([
+      "active",
+      "imported",
+      "imported",
+      "superseded"
+    ]);
+  });
+
+  it("rejects activation when a batch is not eligible", async () => {
+    const httpServer = app.getHttpServer() as Parameters<typeof request>[0];
+    const ineligibleBatch = await createImport(
+      httpServer,
+      {
+        "Weekly Plan": [
+          buildRequiredHeaders(),
+          buildProductionPlanRow({
+            quantity: "abc"
+          })
+        ]
+      },
+      "week-12-ineligible.xlsx"
+    );
+
+    expect(ineligibleBatch).toMatchObject({
+      weekNumber: 12,
+      status: "imported",
+      validRowCount: 0,
+      invalidRowCount: 1
+    });
+
+    const response = await request(httpServer)
+      .post(`/production-plan-imports/${ineligibleBatch.id}/activate`)
+      .expect(409);
+
+    expect(response.body.message).toContain("not eligible for activation");
+
+    await request(httpServer)
+      .get("/production-plan-weeks/12/active-batch")
+      .expect(404);
+  });
+
+  it("rejects invalid week route parameters on week-based endpoints", async () => {
+    const httpServer = app.getHttpServer() as Parameters<typeof request>[0];
+
+    const zeroWeekResponse = await request(httpServer)
+      .get("/production-plan-weeks/0/batches")
+      .expect(400);
+    expect(zeroWeekResponse.body.message).toContain(
+      "weekNumber must be a positive integer"
+    );
+
+    const nonNumericWeekResponse = await request(httpServer)
+      .get("/production-plan-weeks/not-a-number/active-batch")
+      .expect(400);
+    expect(nonNumericWeekResponse.body.message).toContain(
+      "weekNumber must be a positive integer"
+    );
+  });
+
+  it("rejects weekRaw patch attempts once batch week becomes authoritative", async () => {
+    const httpServer = app.getHttpServer() as Parameters<typeof request>[0];
+    const createdBatch = await createImport(
+      httpServer,
+      {
+        "Weekly Plan": [buildRequiredHeaders(), buildProductionPlanRow()]
+      },
+      "week-12-locked-week.xlsx"
+    );
+
+    const rowsResponse = await request(httpServer)
+      .get(`/production-plan-imports/${createdBatch.id}/rows`)
+      .expect(200);
+    const rows = rowsResponse.body as ProductionPlanImportRowResponse[];
+
+    const response = await request(httpServer)
+      .patch(`/production-plan-rows/${rows[0]!.id}`)
+      .send({
+        weekRaw: "15"
+      })
+      .expect(400);
+
+    expect(`${response.body.message}`).toContain("weekRaw");
+  });
+
+  it("rejects patching an active batch into zero valid rows", async () => {
+    const httpServer = app.getHttpServer() as Parameters<typeof request>[0];
+    const createdBatch = await createImport(
+      httpServer,
+      {
+        "Weekly Plan": [buildRequiredHeaders(), buildProductionPlanRow()]
+      },
+      "week-12-protected-active.xlsx"
+    );
+
+    await request(httpServer)
+      .post(`/production-plan-imports/${createdBatch.id}/activate`)
+      .expect(200);
+
+    const rowsResponse = await request(httpServer)
+      .get(`/production-plan-imports/${createdBatch.id}/rows`)
+      .expect(200);
+    const rows = rowsResponse.body as ProductionPlanImportRowResponse[];
+    const validRow = rows[0];
+
+    const patchResponse = await request(httpServer)
+      .patch(`/production-plan-rows/${validRow!.id}`)
+      .send({
+        quantity: "abc"
+      })
+      .expect(409);
+
+    expect(patchResponse.body.message).toContain(
+      "must retain at least one valid row while active"
+    );
+
+    const activeBatchResponse = await request(httpServer)
+      .get("/production-plan-weeks/12/active-batch")
+      .expect(200);
+    const activeBatch =
+      activeBatchResponse.body as ProductionPlanImportBatchResponse;
+
+    expect(activeBatch).toMatchObject({
+      id: createdBatch.id,
+      status: "active",
+      validRowCount: 1,
+      invalidRowCount: 0
+    });
+
+    const rowsAfterFailedPatchResponse = await request(httpServer)
+      .get(`/production-plan-imports/${createdBatch.id}/rows`)
+      .expect(200);
+    const rowsAfterFailedPatch =
+      rowsAfterFailedPatchResponse.body as ProductionPlanImportRowResponse[];
+
+    expect(rowsAfterFailedPatch[0]).toMatchObject({
+      id: validRow!.id,
+      quantity: 25,
+      isValid: true,
+      validationErrors: []
+    });
+  });
 });
+
+async function createImport(
+  httpServer: Parameters<typeof request>[0],
+  sheets: Record<string, unknown[][]>,
+  fileName: string
+): Promise<ProductionPlanImportBatchResponse> {
+  const response = await request(httpServer)
+    .post("/production-plan-imports")
+    .attach("file", createWorkbookBuffer(sheets), {
+      filename: fileName,
+      contentType:
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    });
+
+  expect(response.status).toBe(201);
+
+  return response.body as ProductionPlanImportBatchResponse;
+}
+
+async function uploadWorkbook(
+  httpServer: Parameters<typeof request>[0],
+  sheets: Record<string, unknown[][]>,
+  fileName: string
+) {
+  return request(httpServer)
+    .post("/production-plan-imports")
+    .attach("file", createWorkbookBuffer(sheets), {
+      filename: fileName,
+      contentType:
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    });
+}
 
 async function createDatabaseSchema(memoryPool: QueryablePool): Promise<void> {
   await memoryPool.query('create schema if not exists "production_plan";');
   await memoryPool.query(`
-    create table production_plan.import_batches (
+    create table production_plan.production_plan_import_batches (
       id uuid primary key,
       file_name varchar(255) not null,
       sheet_name varchar(255) not null,
+      week_number integer,
       status varchar(40) not null,
       total_row_count integer not null,
       valid_row_count integer not null,
       invalid_row_count integer not null,
-      created_at timestamptz not null default now(),
-      updated_at timestamptz not null default now()
+      activated_at timestamptz,
+      created_at timestamptz not null,
+      updated_at timestamptz not null
     );
   `);
   await memoryPool.query(`
-    create table production_plan.rows (
+    create table production_plan.production_plan_rows (
       id uuid primary key,
-      batch_id uuid not null references production_plan.import_batches (id) on delete cascade,
+      batch_id uuid not null references production_plan.production_plan_import_batches (id) on delete cascade,
       row_index integer not null,
       source_row_json jsonb not null,
       week_raw varchar(100),
@@ -452,50 +919,69 @@ async function createDatabaseSchema(memoryPool: QueryablePool): Promise<void> {
       priority varchar(100),
       is_valid boolean not null,
       validation_errors jsonb not null default '[]'::jsonb,
-      created_at timestamptz not null default now(),
-      updated_at timestamptz not null default now()
+      created_at timestamptz not null,
+      updated_at timestamptz not null
     );
   `);
   await memoryPool.query(`
+    create index production_plan_import_batches_week_number_idx
+      on production_plan.production_plan_import_batches (week_number);
+  `);
+  await memoryPool.query(`
     create index production_plan_rows_batch_id_idx
-      on production_plan.rows (batch_id);
+      on production_plan.production_plan_rows (batch_id);
   `);
   await memoryPool.query(`
     create unique index production_plan_rows_batch_id_row_index_unique
-      on production_plan.rows (batch_id, row_index);
+      on production_plan.production_plan_rows (batch_id, row_index);
   `);
 }
 
 function createRepositoryDouble(
-  memoryPool: QueryablePool
+  memoryPool: QueryablePool,
+  errors: RepositoryErrorClasses
 ): ProductionPlanImportsRepositoryShape {
+  const baseTime = Date.parse("2026-03-18T00:00:00.000Z");
+  let timestampTick = 0;
+
+  const nextTimestamp = (): string =>
+    new Date(baseTime + timestampTick++).toISOString();
+
   return {
     async createImportBatch(
       input: CreateProductionPlanImportBatchRecord
     ): Promise<ProductionPlanImportBatchResponse> {
+      const batchId = crypto.randomUUID();
+      const createdAt = nextTimestamp();
       const result = await memoryPool.query(
-        `insert into production_plan.import_batches
-          (id, file_name, sheet_name, status, total_row_count, valid_row_count, invalid_row_count)
+        `insert into production_plan.production_plan_import_batches
+          (id, file_name, sheet_name, week_number, status, total_row_count, valid_row_count, invalid_row_count, activated_at, created_at, updated_at)
         values
-          ($1, $2, $3, $4, $5, $6, $7)
+          ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
         returning
           id,
           file_name,
           sheet_name,
+          week_number,
           status,
           total_row_count,
           valid_row_count,
           invalid_row_count,
+          activated_at,
           created_at,
           updated_at`,
         [
-          crypto.randomUUID(),
+          batchId,
           input.fileName,
           input.sheetName,
+          input.weekNumber,
           input.status,
           input.totalRowCount,
           input.validRowCount,
-          input.invalidRowCount
+          input.invalidRowCount,
+          null,
+          createdAt,
+          createdAt
         ]
       );
       const createdBatch = mapBatchRow(
@@ -507,17 +993,18 @@ function createRepositoryDouble(
       }
 
       for (const row of input.rows) {
+        const rowTimestamp = nextTimestamp();
         await memoryPool.query(
-          `insert into production_plan.rows
+          `insert into production_plan.production_plan_rows
             (id, batch_id, row_index, source_row_json, week_raw, week_number, customer_name,
              ordering_party_code, customer_order_number, customer_order_item_number, work_order_number,
              material_code, material_name, quantity, order_unit, planned_finish_date,
-             department_code, priority, is_valid, validation_errors)
+             department_code, priority, is_valid, validation_errors, created_at, updated_at)
           values
             ($1, $2, $3, $4, $5, $6, $7,
              $8, $9, $10, $11,
              $12, $13, $14, $15, $16,
-             $17, $18, $19, $20)`,
+             $17, $18, $19, $20, $21, $22)`,
           [
             crypto.randomUUID(),
             createdBatch.id,
@@ -538,7 +1025,9 @@ function createRepositoryDouble(
             row.departmentCode,
             row.priority,
             row.isValid,
-            JSON.stringify(row.validationErrors)
+            JSON.stringify(row.validationErrors),
+            rowTimestamp,
+            rowTimestamp
           ]
         );
       }
@@ -551,13 +1040,15 @@ function createRepositoryDouble(
           id,
           file_name,
           sheet_name,
+          week_number,
           status,
           total_row_count,
           valid_row_count,
           invalid_row_count,
+          activated_at,
           created_at,
           updated_at
-        from production_plan.import_batches
+        from production_plan.production_plan_import_batches
         order by created_at desc`
       );
 
@@ -577,16 +1068,131 @@ function createRepositoryDouble(
           id,
           file_name,
           sheet_name,
+          week_number,
           status,
           total_row_count,
           valid_row_count,
           invalid_row_count,
+          activated_at,
           created_at,
           updated_at
-        from production_plan.import_batches
+        from production_plan.production_plan_import_batches
         where id = $1
         limit 1`,
         [id]
+      );
+
+      return mapBatchRow(result.rows[0] as ProductionPlanImportBatchRow | undefined);
+    },
+    async findImportBatchesByWeekNumber(
+      weekNumber: number
+    ): Promise<ProductionPlanImportBatchResponse[]> {
+      const result = await memoryPool.query(
+        `select
+          id,
+          file_name,
+          sheet_name,
+          week_number,
+          status,
+          total_row_count,
+          valid_row_count,
+          invalid_row_count,
+          activated_at,
+          created_at,
+          updated_at
+        from production_plan.production_plan_import_batches
+        where week_number = $1
+        order by
+          case
+            when status = 'active' then 0
+            when status = 'imported' then 1
+            when status = 'superseded' then 2
+            else 3
+          end asc,
+          created_at desc`,
+        [weekNumber]
+      );
+
+      return result.rows
+        .map((row) => mapBatchRow(row as ProductionPlanImportBatchRow))
+        .filter(
+          (
+            batch
+          ): batch is ProductionPlanImportBatchResponse => batch !== null
+        );
+    },
+    async findActiveBatchByWeekNumber(
+      weekNumber: number
+    ): Promise<ProductionPlanImportBatchResponse | null> {
+      const result = await memoryPool.query(
+        `select
+          id,
+          file_name,
+          sheet_name,
+          week_number,
+          status,
+          total_row_count,
+          valid_row_count,
+          invalid_row_count,
+          activated_at,
+          created_at,
+          updated_at
+        from production_plan.production_plan_import_batches
+        where week_number = $1
+          and status = 'active'
+        limit 1`,
+        [weekNumber]
+      );
+
+      return mapBatchRow(result.rows[0] as ProductionPlanImportBatchRow | undefined);
+    },
+    async activateBatchById(
+      id: string
+    ): Promise<ProductionPlanImportBatchResponse | null> {
+      const targetBatch = await this.findImportBatchById(id);
+
+      if (!targetBatch) {
+        return null;
+      }
+
+      if (targetBatch.status === "active") {
+        return targetBatch as ProductionPlanImportBatchResponse;
+      }
+
+      if (targetBatch.weekNumber === null || targetBatch.validRowCount <= 0) {
+        throw new errors.ProductionPlanImportBatchNotActivatableError(id);
+      }
+
+      const supersededTimestamp = nextTimestamp();
+      await memoryPool.query(
+        `update production_plan.production_plan_import_batches
+          set status = 'superseded',
+              updated_at = $2
+        where week_number = $1
+          and status = 'active'`,
+        [targetBatch.weekNumber, supersededTimestamp]
+      );
+
+      const activationTimestamp = nextTimestamp();
+      const result = await memoryPool.query(
+        `update production_plan.production_plan_import_batches
+          set status = 'active',
+              activated_at = $2,
+              updated_at = $3
+        where id = $1
+        returning
+          id,
+          file_name,
+          sheet_name,
+          week_number,
+          status,
+          total_row_count,
+          valid_row_count,
+          invalid_row_count,
+          activated_at,
+          created_at,
+          updated_at`,
+        [id, activationTimestamp, activationTimestamp]
       );
 
       return mapBatchRow(result.rows[0] as ProductionPlanImportBatchRow | undefined);
@@ -618,7 +1224,7 @@ function createRepositoryDouble(
           validation_errors,
           created_at,
           updated_at
-        from production_plan.rows
+        from production_plan.production_plan_rows
         where batch_id = $1
         order by row_index asc`,
         [batchId]
@@ -653,7 +1259,7 @@ function createRepositoryDouble(
           validation_errors,
           created_at,
           updated_at
-        from production_plan.rows
+        from production_plan.production_plan_rows
         where id = $1
         limit 1`,
         [id]
@@ -671,8 +1277,50 @@ function createRepositoryDouble(
         return null;
       }
 
+      const existingBatch = await this.findImportBatchById(existingRow.batchId);
+
+      if (!existingBatch) {
+        throw new Error("Failed to load production plan batch.");
+      }
+
+      const batchRows = await this.findRowsByBatchId(existingRow.batchId);
+      const projectedRows = batchRows.map((row) =>
+        row.id === id
+          ? {
+              ...row,
+              weekRaw: input.weekRaw,
+              weekNumber: input.weekNumber,
+              customerName: input.customerName,
+              orderingPartyCode: input.orderingPartyCode,
+              customerOrderNumber: input.customerOrderNumber,
+              customerOrderItemNumber: input.customerOrderItemNumber,
+              workOrderNumber: input.workOrderNumber,
+              materialCode: input.materialCode,
+              materialName: input.materialName,
+              quantity: input.quantity,
+              orderUnit: input.orderUnit,
+              plannedFinishDate: input.plannedFinishDate,
+              departmentCode: input.departmentCode,
+              priority: input.priority,
+              isValid: input.isValid,
+              validationErrors: [...input.validationErrors]
+            }
+          : row
+      );
+
+      const validRowCount = projectedRows.filter((row) => row.isValid).length;
+      const totalRowCount = projectedRows.length;
+      const invalidRowCount = totalRowCount - validRowCount;
+
+      if (existingBatch.status === "active" && validRowCount === 0) {
+        throw new errors.ActiveProductionPlanBatchMustRemainEligibleError(
+          existingBatch.id
+        );
+      }
+
+      const rowUpdatedAt = nextTimestamp();
       const updateResult = await memoryPool.query(
-        `update production_plan.rows
+        `update production_plan.production_plan_rows
           set week_raw = $2,
               week_number = $3,
               customer_name = $4,
@@ -689,7 +1337,7 @@ function createRepositoryDouble(
               priority = $15,
               is_valid = $16,
               validation_errors = $17,
-              updated_at = now()
+              updated_at = $18
         where id = $1
         returning
           id,
@@ -731,7 +1379,8 @@ function createRepositoryDouble(
           input.departmentCode,
           input.priority,
           input.isValid,
-          JSON.stringify(input.validationErrors)
+          JSON.stringify(input.validationErrors),
+          rowUpdatedAt
         ]
       );
       const updatedRow = mapRowRecord(
@@ -741,50 +1390,32 @@ function createRepositoryDouble(
       if (!updatedRow) {
         return null;
       }
-
-      const summaryResult = await memoryPool.query(
-        `select
-          count(*)::int as total_row_count,
-          sum(case when is_valid then 1 else 0 end)::int as valid_row_count,
-          sum(case when is_valid then 0 else 1 end)::int as invalid_row_count
-        from production_plan.rows
-        where batch_id = $1`,
-        [updatedRow.batchId]
-      );
-      const summary = summaryResult.rows[0] as {
-        total_row_count: number;
-        valid_row_count: number;
-        invalid_row_count: number;
-      };
-      const status =
-        summary.invalid_row_count > 0
-          ? "completed_with_invalid_rows"
-          : "completed";
-
+      const batchUpdatedAt = nextTimestamp();
       const batchUpdateResult = await memoryPool.query(
-        `update production_plan.import_batches
+        `update production_plan.production_plan_import_batches
           set total_row_count = $2,
               valid_row_count = $3,
               invalid_row_count = $4,
-              status = $5,
-              updated_at = now()
+              updated_at = $5
         where id = $1
         returning
           id,
           file_name,
           sheet_name,
+          week_number,
           status,
           total_row_count,
           valid_row_count,
           invalid_row_count,
+          activated_at,
           created_at,
           updated_at`,
         [
-          updatedRow.batchId,
-          summary.total_row_count,
-          summary.valid_row_count,
-          summary.invalid_row_count,
-          status
+          existingBatch.id,
+          totalRowCount,
+          validRowCount,
+          invalidRowCount,
+          batchUpdatedAt
         ]
       );
       const updatedBatch = mapBatchRow(
@@ -814,10 +1445,13 @@ function mapBatchRow(
     id: row.id,
     fileName: row.file_name,
     sheetName: row.sheet_name,
+    weekNumber: row.week_number,
     status: row.status,
     totalRowCount: row.total_row_count,
     validRowCount: row.valid_row_count,
     invalidRowCount: row.invalid_row_count,
+    activatedAt:
+      row.activated_at === null ? null : normalizeTimestamp(row.activated_at),
     createdAt: normalizeTimestamp(row.created_at),
     updatedAt: normalizeTimestamp(row.updated_at)
   };

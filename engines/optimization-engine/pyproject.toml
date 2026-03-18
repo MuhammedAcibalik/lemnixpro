@@ -6,7 +6,7 @@ build-backend = "setuptools.build_meta"
 name = "lemnixpro-optimization-engine"
 version = "0.1.0"
 description = "Optimization engine scaffold for LemnixPRO."
-requires-python = ">=3.11"
+requires-python = ">=3.12,<3.13"
 dependencies = [
   "fastapi>=0.115.0,<1.0.0",
   "uvicorn[standard]>=0.30.0,<1.0.0",

@@ -2,6 +2,7 @@ import path from "node:path";
 
 import {
   BadRequestException,
+  ConflictException,
   Inject,
   Injectable,
   NotFoundException
@@ -19,9 +20,14 @@ import type { UpdateProductionPlanRowRequestDto } from "./dto/update-production-
 import {
   MAX_IMPORT_FILE_SIZE_BYTES,
   ProductionPlanImportParser,
+  type NormalizedProductionPlanRow,
   type ProductionPlanRowCandidate
 } from "./production-plan-import.parser";
-import { ProductionPlanImportsRepository } from "./production-plan-imports.repository";
+import {
+  ActiveProductionPlanBatchMustRemainEligibleError,
+  ProductionPlanImportBatchNotActivatableError,
+  ProductionPlanImportsRepository
+} from "./production-plan-imports.repository";
 
 export type UploadedProductionPlanImportFile = {
   originalname: string;
@@ -54,11 +60,14 @@ export class ProductionPlanImportsService {
       normalizedFile.buffer
     );
 
+    const batchWeekNumber = this.resolveBatchWeekNumber(parsedImport.rows);
+
     const createdBatch =
       await this.productionPlanImportsRepository.createImportBatch({
         fileName: normalizedFile.originalname,
         sheetName: parsedImport.sheetName,
-        status: parsedImport.status,
+        weekNumber: batchWeekNumber,
+        status: "imported",
         totalRowCount: parsedImport.totalRowCount,
         validRowCount: parsedImport.validRowCount,
         invalidRowCount: parsedImport.invalidRowCount,
@@ -93,6 +102,17 @@ export class ProductionPlanImportsService {
     return batches.map((batch) => this.toBatchResponse(batch));
   }
 
+  async findImportsByWeekNumber(
+    weekNumber: number
+  ): Promise<ProductionPlanImportBatchResponseDto[]> {
+    const batches =
+      await this.productionPlanImportsRepository.findImportBatchesByWeekNumber(
+        weekNumber
+      );
+
+    return batches.map((batch) => this.toBatchResponse(batch));
+  }
+
   async findImportById(
     id: string
   ): Promise<ProductionPlanImportBatchDetailResponseDto> {
@@ -121,6 +141,44 @@ export class ProductionPlanImportsService {
     return rows.map((row) => this.toRowResponse(row));
   }
 
+  async activateImport(id: string): Promise<ProductionPlanImportBatchResponseDto> {
+    try {
+      const activatedBatch =
+        await this.productionPlanImportsRepository.activateBatchById(id);
+
+      if (!activatedBatch) {
+        throw new NotFoundException(
+          `Production plan import batch "${id}" was not found.`
+        );
+      }
+
+      return this.toBatchResponse(activatedBatch);
+    } catch (error) {
+      if (error instanceof ProductionPlanImportBatchNotActivatableError) {
+        throw new ConflictException(error.message);
+      }
+
+      throw error;
+    }
+  }
+
+  async findActiveBatchByWeekNumber(
+    weekNumber: number
+  ): Promise<ProductionPlanImportBatchResponseDto> {
+    const batch =
+      await this.productionPlanImportsRepository.findActiveBatchByWeekNumber(
+        weekNumber
+      );
+
+    if (!batch) {
+      throw new NotFoundException(
+        `No active production plan import batch exists for week "${weekNumber}".`
+      );
+    }
+
+    return this.toBatchResponse(batch);
+  }
+
   async updateRow(
     id: string,
     request: UpdateProductionPlanRowRequestDto
@@ -143,25 +201,38 @@ export class ProductionPlanImportsService {
       existingRow.rowIndex
     );
 
-    const updatedRowResult =
-      await this.productionPlanImportsRepository.updateRowAndRefreshBatchSummary(id, {
-        weekRaw: normalizedRow.weekRaw,
-        weekNumber: normalizedRow.weekNumber,
-        customerName: normalizedRow.customerName,
-        orderingPartyCode: normalizedRow.orderingPartyCode,
-        customerOrderNumber: normalizedRow.customerOrderNumber,
-        customerOrderItemNumber: normalizedRow.customerOrderItemNumber,
-        workOrderNumber: normalizedRow.workOrderNumber,
-        materialCode: normalizedRow.materialCode,
-        materialName: normalizedRow.materialName,
-        quantity: normalizedRow.quantity,
-        orderUnit: normalizedRow.orderUnit,
-        plannedFinishDate: normalizedRow.plannedFinishDate,
-        departmentCode: normalizedRow.departmentCode,
-        priority: normalizedRow.priority,
-        isValid: normalizedRow.isValid,
-        validationErrors: normalizedRow.validationErrors
-      });
+    let updatedRowResult;
+
+    try {
+      updatedRowResult =
+        await this.productionPlanImportsRepository.updateRowAndRefreshBatchSummary(
+          id,
+          {
+            weekRaw: normalizedRow.weekRaw,
+            weekNumber: normalizedRow.weekNumber,
+            customerName: normalizedRow.customerName,
+            orderingPartyCode: normalizedRow.orderingPartyCode,
+            customerOrderNumber: normalizedRow.customerOrderNumber,
+            customerOrderItemNumber: normalizedRow.customerOrderItemNumber,
+            workOrderNumber: normalizedRow.workOrderNumber,
+            materialCode: normalizedRow.materialCode,
+            materialName: normalizedRow.materialName,
+            quantity: normalizedRow.quantity,
+            orderUnit: normalizedRow.orderUnit,
+            plannedFinishDate: normalizedRow.plannedFinishDate,
+            departmentCode: normalizedRow.departmentCode,
+            priority: normalizedRow.priority,
+            isValid: normalizedRow.isValid,
+            validationErrors: normalizedRow.validationErrors
+          }
+        );
+    } catch (error) {
+      if (error instanceof ActiveProductionPlanBatchMustRemainEligibleError) {
+        throw new ConflictException(error.message);
+      }
+
+      throw error;
+    }
 
     if (!updatedRowResult) {
       throw new NotFoundException(`Production plan row "${id}" was not found.`);
@@ -208,7 +279,7 @@ export class ProductionPlanImportsService {
     request: UpdateProductionPlanRowRequestDto
   ): ProductionPlanRowCandidate {
     return {
-      weekRaw: request.weekRaw !== undefined ? request.weekRaw : existingRow.weekRaw,
+      weekRaw: existingRow.weekRaw,
       customerName:
         request.customerName !== undefined
           ? request.customerName
@@ -258,10 +329,12 @@ export class ProductionPlanImportsService {
       id: batch.id,
       fileName: batch.fileName,
       sheetName: batch.sheetName,
+      weekNumber: batch.weekNumber,
       status: batch.status,
       totalRowCount: batch.totalRowCount,
       validRowCount: batch.validRowCount,
       invalidRowCount: batch.invalidRowCount,
+      activatedAt: batch.activatedAt,
       createdAt: batch.createdAt,
       updatedAt: batch.updatedAt
     };
@@ -298,5 +371,33 @@ export class ProductionPlanImportsService {
       createdAt: row.createdAt,
       updatedAt: row.updatedAt
     };
+  }
+
+  private resolveBatchWeekNumber(
+    rows: NormalizedProductionPlanRow[]
+  ): number {
+    const distinctWeekNumbers = [...new Set(
+      rows
+        .map((row) => row.weekNumber)
+        .filter((weekNumber): weekNumber is number => weekNumber !== null)
+    )];
+
+    if (distinctWeekNumbers.length === 1) {
+      const [resolvedWeekNumber] = distinctWeekNumbers;
+
+      if (resolvedWeekNumber !== undefined) {
+        return resolvedWeekNumber;
+      }
+    }
+
+    if (distinctWeekNumbers.length === 0) {
+      throw new BadRequestException(
+        "The uploaded worksheet must resolve exactly one authoritative week number."
+      );
+    }
+
+    throw new BadRequestException(
+      "The uploaded worksheet contains conflicting week numbers and cannot be imported."
+    );
   }
 }

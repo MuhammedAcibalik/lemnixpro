@@ -1,6 +1,6 @@
-import { ApiProperty } from "@nestjs/swagger";
+import { ApiProperty, ApiPropertyOptional } from "@nestjs/swagger";
 
-import { productionPlanImportBatchStatusValues } from "../production-plan-import.parser";
+import { productionPlanImportBatchStatuses } from "../../../infrastructure/db/schema";
 
 export class ProductionPlanImportBatchResponseDto {
   @ApiProperty()
@@ -12,8 +12,13 @@ export class ProductionPlanImportBatchResponseDto {
   @ApiProperty()
   sheetName!: string;
 
+  @ApiPropertyOptional({
+    nullable: true
+  })
+  weekNumber!: number | null;
+
   @ApiProperty({
-    enum: productionPlanImportBatchStatusValues
+    enum: productionPlanImportBatchStatuses
   })
   status!: string;
 
@@ -25,6 +30,11 @@ export class ProductionPlanImportBatchResponseDto {
 
   @ApiProperty()
   invalidRowCount!: number;
+
+  @ApiPropertyOptional({
+    nullable: true
+  })
+  activatedAt!: string | null;
 
   @ApiProperty()
   createdAt!: string;

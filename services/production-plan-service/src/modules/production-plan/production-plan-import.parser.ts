@@ -8,11 +8,6 @@ import {
   type WorkSheet
 } from "xlsx";
 
-import {
-  type ProductionPlanImportBatchStatus,
-  productionPlanImportBatchStatuses
-} from "../../infrastructure/db/schema";
-
 const REQUIRED_HEADER_MAPPINGS = [
   { sourceHeader: "Hafta", aliases: ["Hafta"], field: "weekRaw" },
   { sourceHeader: "Ad", aliases: ["Ad"], field: "customerName" },
@@ -116,6 +111,12 @@ type PlannedFinishDateParseResult = {
   error: string | null;
 };
 
+type ParsedExcelDateCode = {
+  y?: number;
+  m?: number;
+  d?: number;
+};
+
 export type ProductionPlanRowCandidate = Record<ProductionPlanField, unknown>;
 
 export type NormalizedProductionPlanRow = {
@@ -144,7 +145,6 @@ export type ParsedProductionPlanImport = {
   totalRowCount: number;
   validRowCount: number;
   invalidRowCount: number;
-  status: ProductionPlanImportBatchStatus;
   rows: NormalizedProductionPlanRow[];
 };
 
@@ -191,7 +191,6 @@ export class ProductionPlanImportParser {
       totalRowCount: rows.length,
       validRowCount,
       invalidRowCount,
-      status: invalidRowCount > 0 ? "completed_with_invalid_rows" : "completed",
       rows
     };
   }
@@ -692,7 +691,11 @@ export class ProductionPlanImportParser {
   }
 
   private parseExcelSerialDate(serialValue: number): PlannedFinishDateParseResult {
-    const parsedDateCode = SSF.parse_date_code(serialValue);
+    const parsedDateCode = (
+      SSF as {
+        parse_date_code(value: number): ParsedExcelDateCode | null;
+      }
+    ).parse_date_code(serialValue);
 
     if (!parsedDateCode?.y || !parsedDateCode.m || !parsedDateCode.d) {
       return {
@@ -861,6 +864,3 @@ export class ProductionPlanImportParser {
     );
   }
 }
-
-export const productionPlanImportBatchStatusValues =
-  productionPlanImportBatchStatuses;

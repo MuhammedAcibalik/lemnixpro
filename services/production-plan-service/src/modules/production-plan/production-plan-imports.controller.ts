@@ -2,18 +2,21 @@ import {
   Body,
   Controller,
   Get,
+  HttpCode,
   Inject,
   Param,
   ParseUUIDPipe,
   Patch,
   Post,
   UploadedFile,
+  ValidationPipe,
   UseInterceptors
 } from "@nestjs/common";
 import { FileInterceptor } from "@nestjs/platform-express";
 import {
   ApiBadRequestResponse,
   ApiBody,
+  ApiConflictResponse,
   ApiConsumes,
   ApiCreatedResponse,
   ApiNotFoundResponse,
@@ -26,7 +29,7 @@ import { ProductionPlanImportBatchDetailResponseDto } from "./dto/production-pla
 import { ProductionPlanImportBatchResponseDto } from "./dto/production-plan-import-batch-response.dto";
 import { ProductionPlanImportRowResponseDto } from "./dto/production-plan-import-row-response.dto";
 import { UpdateProductionPlanRowRequestDto } from "./dto/update-production-plan-row-request.dto";
-import { MAX_IMPORT_FILE_SIZE_BYTES } from "./production-plan-import.parser";
+import { ParseProductionPlanWeekNumberPipe } from "./parse-production-plan-week-number.pipe";
 import {
   type UploadedProductionPlanImportFile,
   ProductionPlanImportsService
@@ -77,6 +80,22 @@ export class ProductionPlanImportsController {
     return this.productionPlanImportsService.findAllImports();
   }
 
+  @Get("production-plan-weeks/:weekNumber/batches")
+  @ApiOperation({
+    summary:
+      "List production plan import batches for one week by lifecycle priority and recency."
+  })
+  @ApiOkResponse({ type: ProductionPlanImportBatchResponseDto, isArray: true })
+  @ApiBadRequestResponse({
+    description: "weekNumber must be a positive integer."
+  })
+  async findImportsByWeekNumber(
+    @Param("weekNumber", new ParseProductionPlanWeekNumberPipe())
+    weekNumber: number
+  ): Promise<ProductionPlanImportBatchResponseDto[]> {
+    return this.productionPlanImportsService.findImportsByWeekNumber(weekNumber);
+  }
+
   @Get("production-plan-imports/:id")
   @ApiOperation({ summary: "Get one production plan import batch summary." })
   @ApiOkResponse({ type: ProductionPlanImportBatchDetailResponseDto })
@@ -97,6 +116,38 @@ export class ProductionPlanImportsController {
     return this.productionPlanImportsService.findRowsByBatchId(id);
   }
 
+  @Post("production-plan-imports/:id/activate")
+  @HttpCode(200)
+  @ApiOperation({ summary: "Activate one production plan import batch." })
+  @ApiOkResponse({ type: ProductionPlanImportBatchResponseDto })
+  @ApiNotFoundResponse({ description: "Production plan import batch was not found." })
+  @ApiConflictResponse({
+    description: "Production plan import batch is not eligible for activation."
+  })
+  async activateImport(
+    @Param("id", new ParseUUIDPipe({ version: "4" })) id: string
+  ): Promise<ProductionPlanImportBatchResponseDto> {
+    return this.productionPlanImportsService.activateImport(id);
+  }
+
+  @Get("production-plan-weeks/:weekNumber/active-batch")
+  @ApiOperation({ summary: "Get the active production plan import batch for one week." })
+  @ApiOkResponse({ type: ProductionPlanImportBatchResponseDto })
+  @ApiBadRequestResponse({
+    description: "weekNumber must be a positive integer."
+  })
+  @ApiNotFoundResponse({
+    description: "No active production plan import batch exists for the requested week."
+  })
+  async findActiveBatchByWeekNumber(
+    @Param("weekNumber", new ParseProductionPlanWeekNumberPipe())
+    weekNumber: number
+  ): Promise<ProductionPlanImportBatchResponseDto> {
+    return this.productionPlanImportsService.findActiveBatchByWeekNumber(
+      weekNumber
+    );
+  }
+
   @Patch("production-plan-rows/:id")
   @ApiOperation({ summary: "Apply a narrow correction to one production plan row." })
   @ApiOkResponse({ type: ProductionPlanImportRowResponseDto })
@@ -104,9 +155,20 @@ export class ProductionPlanImportsController {
     description: "The patch payload is invalid or no editable fields were provided."
   })
   @ApiNotFoundResponse({ description: "Production plan row was not found." })
+  @ApiConflictResponse({
+    description: "An active production plan import batch must retain at least one valid row."
+  })
   async updateRow(
     @Param("id", new ParseUUIDPipe({ version: "4" })) id: string,
-    @Body() request: UpdateProductionPlanRowRequestDto
+    @Body(
+      new ValidationPipe({
+        whitelist: true,
+        transform: true,
+        forbidNonWhitelisted: true,
+        expectedType: UpdateProductionPlanRowRequestDto
+      })
+    )
+    request: UpdateProductionPlanRowRequestDto
   ): Promise<ProductionPlanImportRowResponseDto> {
     return this.productionPlanImportsService.updateRow(id, request);
   }

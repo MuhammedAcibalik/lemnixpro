@@ -1,27 +1,40 @@
 # Backend Architecture
 
-## Overview
+## Status
 
-LemnixPRO is organized as a backend-first microservices platform for internal aluminum cutting planning and optimization workflows. The web application is a thin shell over explicit service APIs. Core business responsibilities are isolated into independently deployable NestJS services, while the optimization engine runs as a separate Python process.
+This is the active architecture direction for LemnixPRO. Earlier modular-monolith recommendations are historical only and must not be used for new bootstrap or implementation decisions.
 
-## Service Boundaries
+## System Shape
 
-- `api-gateway-service`: external HTTP entry point, request shaping, rate limiting, and auth integration scaffold
-- `identity-service`: authentication, users, and roles boundary
-- `master-data-service`: profiles and reference data boundary
-- `production-plan-service`: weekly Excel production plan boundary
-- `cut-list-service`: weekly cut list boundary
-- `optimization-orchestrator-service`: optimization job orchestration and messaging boundary
-- `result-service`: optimization result boundary
-- `optimization-engine`: Python execution boundary for future OR-Tools optimization
+- Backend-first microservices monorepo
+- `apps/web` is a thin internal web shell
+- `services/*` are deployable NestJS services with explicit domain ownership
+- `packages/*` are limited to shared contracts, shared types, and domain-neutral technical utilities
+- `engines/optimization-engine` is a separate Python FastAPI service using Google OR-Tools
 
-## Communication Rules
+## Active Implemented Backend Slices
 
-- External web access goes only through the gateway
-- Internal synchronous access is explicit HTTP between services
-- Internal async workflows use RabbitMQ
-- Shared code moves only through workspace packages, never direct service imports
+- `identity-service`: identity and authentication boundary
+- `master-data-service`: main profile master data boundary
+- `production-plan-service`: weekly production plan import boundary
 
-## Data Ownership
+## Supporting Platform Boundaries
 
-Every DB-owning service manages its own PostgreSQL schema and local Drizzle configuration. No service reads or writes another service's tables directly.
+- `apps/web`: internal user interface shell
+- `api-gateway-service`: browser-facing HTTP and routing boundary
+
+## Planned or Reserved Slices
+
+- `cut-list-service`: cut list management boundary
+- `optimization-orchestrator-service`: optimization request orchestration and async workflow boundary
+- `result-service`: optimization output persistence and retrieval boundary
+- `engines/optimization-engine`: Python execution boundary for OR-Tools optimization jobs
+
+## Architecture Rules
+
+- External users interact with `apps/web`, and backend API access from the web shell goes through `api-gateway-service`.
+- Service-to-service synchronous communication uses explicit HTTP APIs.
+- Long-running optimization workflows use RabbitMQ.
+- Every DB-owning service manages its own PostgreSQL schema, migration history, and data access layer.
+- No cross-service relative imports, no shared tables, and no hidden domain sharing inside `packages`.
+- The Python engine keeps local Pydantic models aligned with transport contracts and does not import TypeScript source code.
