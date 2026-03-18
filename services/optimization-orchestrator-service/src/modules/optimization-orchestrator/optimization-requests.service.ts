@@ -31,6 +31,7 @@ import type {
 import type {
   CreateOptimizationRequestResponseDto,
   OptimizationRequestDetailResponseDto,
+  OptimizationRequestRequeueResponseDto,
   OptimizationRequestSummaryDto
 } from "./dto/optimization-request-response.dto";
 import {
@@ -124,23 +125,19 @@ export class OptimizationRequestsService {
       id: createdRequest.id,
       status: "ready"
     });
-    const queuedAt = new Date().toISOString();
-
-    await this.optimizationRequestQueuePublisher.publish(
-      this.toQueueEnvelope(readyRequest, queuedAt)
-    );
-
-    const queuedRequest = await this.optimizationRequestsRepository.updateStatus({
-      id: createdRequest.id,
-      status: "queued",
-      queuedAt
-    });
+    const queuedRequest = await this.handoffReadyRequest(readyRequest);
 
     return this.toCreateRequestResponse(queuedRequest, preparedRequest);
   }
 
   async findAll(): Promise<OptimizationRequestSummaryDto[]> {
     const requests = await this.optimizationRequestsRepository.findAll();
+
+    return requests.map((request) => this.toRequestSummary(request));
+  }
+
+  async findReady(): Promise<OptimizationRequestSummaryDto[]> {
+    const requests = await this.optimizationRequestsRepository.findReady();
 
     return requests.map((request) => this.toRequestSummary(request));
   }
@@ -155,6 +152,30 @@ export class OptimizationRequestsService {
     return {
       request: this.toRequestSummary(request),
       payloadPreview: request.payloadJson
+    };
+  }
+
+  async requeueRequest(
+    id: string
+  ): Promise<OptimizationRequestRequeueResponseDto> {
+    const request = await this.optimizationRequestsRepository.findById(id);
+
+    if (!request) {
+      throw new NotFoundException(`Optimization request "${id}" was not found.`);
+    }
+
+    if (request.status !== "ready") {
+      throw new UnprocessableEntityException({
+        message: `Optimization request "${id}" can be requeued only from "ready" status. Current status is "${request.status}".`,
+        request: this.toRequestSummary(request)
+      });
+    }
+
+    const queuedRequest = await this.handoffReadyRequest(request);
+
+    return {
+      request: this.toRequestSummary(queuedRequest),
+      message: `Optimization request "${id}" was requeued to the optimization request queue.`
     };
   }
 
@@ -228,6 +249,21 @@ export class OptimizationRequestsService {
       payloadPreview: preparedRequest.payloadPreview,
       unmatchedSummary: this.toUnmatchedSummary(preparedRequest)
     };
+  }
+
+  private async handoffReadyRequest(
+    request: OptimizationRequestRecord
+  ): Promise<OptimizationRequestRecord> {
+    const queuedAt = new Date().toISOString();
+
+    await this.optimizationRequestQueuePublisher.publish(
+      this.toQueueEnvelope(request, queuedAt)
+    );
+
+    return this.optimizationRequestsRepository.markQueuedFromReady({
+      id: request.id,
+      queuedAt
+    });
   }
 
   private toRequestSummary(

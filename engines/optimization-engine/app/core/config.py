@@ -11,6 +11,15 @@ class Settings(BaseModel):
     port: int = int(getenv("PORT", "8000"))
     log_level: str = getenv("LOG_LEVEL", "info")
     rabbitmq_url: str = getenv("RABBITMQ_URL", "amqp://guest:guest@localhost:5672")
+    optimization_request_queue: str = getenv(
+        "OPTIMIZATION_REQUEST_QUEUE", "optimization.requests"
+    )
+    optimization_exchange: str = getenv(
+        "OPTIMIZATION_EXCHANGE", "optimization.exchange"
+    )
+    optimization_requested_routing_key: str = getenv(
+        "OPTIMIZATION_REQUESTED_ROUTING_KEY", "optimization.requested"
+    )
 
 
 @lru_cache

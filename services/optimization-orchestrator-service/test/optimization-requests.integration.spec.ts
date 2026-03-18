@@ -12,9 +12,11 @@ import type {
   OptimizationQueueEnvelope,
   OptimizationRequestPayload
 } from "@lemnixpro/shared-contracts";
+import type { OptimizationRequestRecord } from "../src/infrastructure/db/schema";
 import type { OptimizationRequestQueuePublisher } from "../src/modules/optimization-orchestrator/optimization-request-queue.publisher";
 import type {
   CreateOptimizationRequestRecord,
+  MarkOptimizationRequestQueuedRecord,
   OptimizationRequestsRepository,
   UpdateOptimizationRequestStatusRecord
 } from "../src/modules/optimization-orchestrator/optimization-requests.repository";
@@ -91,6 +93,11 @@ type OptimizationRequestDetailResponse = {
   payloadPreview: OptimizationRequestPayloadResponse;
 };
 
+type OptimizationRequestRequeueResponse = {
+  request: OptimizationRequestSummaryResponse;
+  message: string;
+};
+
 type PersistedOptimizationRequestRow = {
   id: string;
   week_number: number;
@@ -120,7 +127,12 @@ const mainProfileIds = {
 
 type OptimizationRequestsRepositoryShape = Pick<
   OptimizationRequestsRepository,
-  "create" | "updateStatus" | "findAll" | "findById"
+  | "create"
+  | "updateStatus"
+  | "findAll"
+  | "findReady"
+  | "findById"
+  | "markQueuedFromReady"
 >;
 
 describe("optimization-orchestrator-service optimization requests", () => {
@@ -129,6 +141,7 @@ describe("optimization-orchestrator-service optimization requests", () => {
   let productionPlanStubServer: ReturnType<typeof createServer>;
   let masterDataStubServer: ReturnType<typeof createServer>;
   let publishedEnvelopes: OptimizationQueueEnvelope[];
+  let optimizationRequestsRepositoryDouble: OptimizationRequestsRepositoryShape;
   let AppModule: typeof import("../src/app.module").AppModule;
   let optimizationRequestQueuePublisherToken: typeof import("../src/modules/optimization-orchestrator/optimization-request-queue.publisher").OPTIMIZATION_REQUEST_QUEUE_PUBLISHER;
   let OptimizationRequestsRepositoryClass: typeof import("../src/modules/optimization-orchestrator/optimization-requests.repository").OptimizationRequestsRepository;
@@ -236,7 +249,7 @@ describe("optimization-orchestrator-service optimization requests", () => {
     memoryPool = new adapter.Pool();
 
     await createDatabaseSchema(memoryPool);
-    const optimizationRequestsRepository = createRepositoryDouble(memoryPool);
+    optimizationRequestsRepositoryDouble = createRepositoryDouble(memoryPool);
     const queuePublisherDouble: OptimizationRequestQueuePublisher = {
       async publish(envelope) {
         publishedEnvelopes.push(envelope);
@@ -247,7 +260,7 @@ describe("optimization-orchestrator-service optimization requests", () => {
       imports: [AppModule]
     })
       .overrideProvider(OptimizationRequestsRepositoryClass)
-      .useValue(optimizationRequestsRepository)
+      .useValue(optimizationRequestsRepositoryDouble)
       .overrideProvider(optimizationRequestQueuePublisherToken)
       .useValue(queuePublisherDouble)
       .compile();
@@ -374,7 +387,7 @@ describe("optimization-orchestrator-service optimization requests", () => {
       matched_rows: 2,
       unmatched_rows: 0
     });
-    expect(normalizeTimestamp(persistedRequests[0]?.queued_at)).toBe(
+    expect(normalizeTimestamp(persistedRequests[0]?.queued_at ?? null)).toBe(
       body.request.queuedAt
     );
     expect(normalizePayloadJson(persistedRequests[0]?.payload_json)).toEqual(
@@ -481,6 +494,149 @@ describe("optimization-orchestrator-service optimization requests", () => {
       queued_at: null
     });
   });
+
+  it('lists only requests that remain in "ready" state', async () => {
+    const httpServer = app.getHttpServer() as Parameters<typeof request>[0];
+    const firstReadyRequest = await seedOptimizationRequest(
+      optimizationRequestsRepositoryDouble,
+      {
+        weekNumber: 12,
+        sourceBatchId: batchIds.week12,
+        payloadJson: buildOptimizationPayload(12, batchIds.week12),
+        status: "ready",
+        matchedRows: 1,
+        unmatchedRows: 3
+      }
+    );
+    const secondReadyRequest = await seedOptimizationRequest(
+      optimizationRequestsRepositoryDouble,
+      {
+        weekNumber: 14,
+        sourceBatchId: batchIds.week14,
+        payloadJson: buildOptimizationPayload(14, batchIds.week14),
+        status: "ready",
+        matchedRows: 2,
+        unmatchedRows: 0
+      }
+    );
+
+    await seedOptimizationRequest(optimizationRequestsRepositoryDouble, {
+      weekNumber: 15,
+      sourceBatchId: batchIds.week15,
+      payloadJson: {
+        weekNumber: 15,
+        sourceBatchId: batchIds.week15,
+        mainProfiles: [],
+        demandRows: []
+      },
+      status: "failed_preparation",
+      matchedRows: 0,
+      unmatchedRows: 2
+    });
+
+    const response = await request(httpServer)
+      .get("/optimization-requests/ready")
+      .expect(200);
+    const body = response.body as OptimizationRequestSummaryResponse[];
+
+    expect(body).toEqual([
+      toOptimizationRequestSummaryResponse(secondReadyRequest),
+      toOptimizationRequestSummaryResponse(firstReadyRequest)
+    ]);
+    expect(publishedEnvelopes).toEqual([]);
+  });
+
+  it("requeues a ready optimization request and marks it queued after publish", async () => {
+    const httpServer = app.getHttpServer() as Parameters<typeof request>[0];
+    const readyRequest = await seedOptimizationRequest(
+      optimizationRequestsRepositoryDouble,
+      {
+        weekNumber: 14,
+        sourceBatchId: batchIds.week14,
+        payloadJson: buildOptimizationPayload(14, batchIds.week14),
+        status: "ready",
+        matchedRows: 2,
+        unmatchedRows: 0
+      }
+    );
+
+    const response = await request(httpServer)
+      .post(`/optimization-requests/${readyRequest.id}/requeue`)
+      .expect(200);
+    const body = response.body as OptimizationRequestRequeueResponse;
+
+    expect(body.message).toBe(
+      `Optimization request "${readyRequest.id}" was requeued to the optimization request queue.`
+    );
+    expect(body.request).toMatchObject({
+      id: readyRequest.id,
+      weekNumber: readyRequest.weekNumber,
+      sourceBatchId: readyRequest.sourceBatchId,
+      status: "queued",
+      matchedRows: readyRequest.matchedRows,
+      unmatchedRows: readyRequest.unmatchedRows
+    });
+    expect(body.request.queuedAt).toEqual(expect.any(String));
+    expect(publishedEnvelopes).toEqual([
+      {
+        requestId: readyRequest.id,
+        weekNumber: readyRequest.weekNumber,
+        sourceBatchId: readyRequest.sourceBatchId,
+        payload: readyRequest.payloadJson,
+        queuedAt: body.request.queuedAt
+      }
+    ]);
+
+    const persistedRequests = await listPersistedOptimizationRequests(memoryPool);
+    const persistedRequest = persistedRequests.find(
+      (request) => request.id === readyRequest.id
+    );
+
+    expect(persistedRequest).toMatchObject({
+      id: readyRequest.id,
+      status: "queued"
+    });
+    expect(normalizeTimestamp(persistedRequest?.queued_at ?? null)).toBe(
+      body.request.queuedAt
+    );
+  });
+
+  it.each(["queued", "failed_preparation"] as const)(
+    'rejects manual requeue when the persisted request is "%s"',
+    async (status) => {
+      const httpServer = app.getHttpServer() as Parameters<typeof request>[0];
+      const requestRecord = await seedOptimizationRequest(
+        optimizationRequestsRepositoryDouble,
+        {
+          weekNumber: status === "queued" ? 14 : 15,
+          sourceBatchId:
+            status === "queued" ? batchIds.week14 : batchIds.week15,
+          payloadJson:
+            status === "queued"
+              ? buildOptimizationPayload(14, batchIds.week14)
+              : {
+                  weekNumber: 15,
+                  sourceBatchId: batchIds.week15,
+                  mainProfiles: [],
+                  demandRows: []
+                },
+          status,
+          matchedRows: status === "queued" ? 2 : 0,
+          unmatchedRows: status === "queued" ? 0 : 2
+        }
+      );
+
+      const response = await request(httpServer)
+        .post(`/optimization-requests/${requestRecord.id}/requeue`)
+        .expect(422);
+
+      expect(response.body).toMatchObject({
+        message: `Optimization request "${requestRecord.id}" can be requeued only from "ready" status. Current status is "${status}".`,
+        request: toOptimizationRequestSummaryResponse(requestRecord)
+      });
+      expect(publishedEnvelopes).toEqual([]);
+    }
+  );
 
   it("lists requests newest first and returns request detail", async () => {
     const httpServer = app.getHttpServer() as Parameters<typeof request>[0];
@@ -872,6 +1028,28 @@ function createRepositoryDouble(
         .map((row) => mapPersistedOptimizationRequestRow(row))
         .filter((row): row is NonNullable<typeof row> => row !== null);
     },
+    async findReady() {
+      const result = await memoryPool.query<PersistedOptimizationRequestRow>(
+        `select
+          id,
+          week_number,
+          source_batch_id,
+          status,
+          payload_json,
+          matched_rows,
+          unmatched_rows,
+          queued_at,
+          created_at,
+          updated_at
+        from optimization.optimization_requests
+        where status = 'ready'
+        order by created_at desc, id desc`
+      );
+
+      return result.rows
+        .map((row) => mapPersistedOptimizationRequestRow(row))
+        .filter((row): row is NonNullable<typeof row> => row !== null);
+    },
     async findById(id: string) {
       const result = await memoryPool.query<PersistedOptimizationRequestRow>(
         `select
@@ -892,7 +1070,208 @@ function createRepositoryDouble(
       );
 
       return mapPersistedOptimizationRequestRow(result.rows[0]);
+    },
+    async markQueuedFromReady(input: MarkOptimizationRequestQueuedRecord) {
+      const updatedAt = nextTimestamp();
+      const result = await memoryPool.query<PersistedOptimizationRequestRow>(
+        `update optimization.optimization_requests
+        set
+          status = 'queued',
+          queued_at = $2,
+          updated_at = $3
+        where id = $1
+          and status = 'ready'
+        returning
+          id,
+          week_number,
+          source_batch_id,
+          status,
+          payload_json,
+          matched_rows,
+          unmatched_rows,
+          queued_at,
+          created_at,
+          updated_at`,
+        [input.id, input.queuedAt, updatedAt]
+      );
+
+      const updatedRequest = mapPersistedOptimizationRequestRow(result.rows[0]);
+
+      if (!updatedRequest) {
+        throw new Error(
+          `Failed to mark optimization request "${input.id}" as queued from ready state.`
+        );
+      }
+
+      return updatedRequest;
     }
+  };
+}
+
+function buildOptimizationPayload(
+  weekNumber: number,
+  sourceBatchId: string
+): OptimizationRequestPayload {
+  if (weekNumber === 12) {
+    return {
+      weekNumber,
+      sourceBatchId,
+      mainProfiles: [
+        {
+          id: mainProfileIds.mp1,
+          code: "MP-001",
+          name: "Window Frame Profile",
+          linkedProductCode: "PRD-100",
+          linkedProductName: "Window Frame",
+          stockLengthMm: 6500
+        }
+      ],
+      demandRows: [
+        {
+          productionRowId: "21111111-1111-4111-8111-111111111121",
+          rowIndex: 2,
+          mainProfileId: mainProfileIds.mp1,
+          mainProfileCode: "MP-001",
+          customerName: "Acme Aluminyum",
+          orderingPartyCode: "OP-001",
+          customerOrderNumber: "000123",
+          customerOrderItemNumber: "00010",
+          workOrderNumber: "WO-001",
+          materialCode: "prd-100",
+          materialName: "Window Frame",
+          quantity: 25,
+          orderUnit: "ADET",
+          plannedFinishDate: "2026-03-20",
+          departmentCode: "CUT01",
+          priority: "HIGH"
+        }
+      ]
+    };
+  }
+
+  return {
+    weekNumber,
+    sourceBatchId,
+    mainProfiles: [
+      {
+        id: mainProfileIds.mp1,
+        code: "MP-001",
+        name: "Window Frame Profile",
+        linkedProductCode: "PRD-100",
+        linkedProductName: "Window Frame",
+        stockLengthMm: 6500
+      },
+      {
+        id: mainProfileIds.mp5,
+        code: "MP-005",
+        name: "Door Frame Profile",
+        linkedProductCode: "PRD-300",
+        linkedProductName: "Door Frame",
+        stockLengthMm: 7000
+      }
+    ],
+    demandRows: [
+      {
+        productionRowId: "21111111-1111-4111-8111-111111111141",
+        rowIndex: 2,
+        mainProfileId: mainProfileIds.mp1,
+        mainProfileCode: "MP-001",
+        customerName: "Atlas Aluminyum",
+        orderingPartyCode: "OP-101",
+        customerOrderNumber: "000201",
+        customerOrderItemNumber: "00010",
+        workOrderNumber: "WO-101",
+        materialCode: "PRD-100",
+        materialName: "Window Frame",
+        quantity: 18,
+        orderUnit: "ADET",
+        plannedFinishDate: "2026-03-20",
+        departmentCode: "CUT01",
+        priority: "HIGH"
+      },
+      {
+        productionRowId: "21111111-1111-4111-8111-111111111142",
+        rowIndex: 3,
+        mainProfileId: mainProfileIds.mp5,
+        mainProfileCode: "MP-005",
+        customerName: "Nova Aluminyum",
+        orderingPartyCode: "OP-102",
+        customerOrderNumber: "000202",
+        customerOrderItemNumber: "00020",
+        workOrderNumber: "WO-102",
+        materialCode: "PRD-300",
+        materialName: "Door Frame",
+        quantity: 8,
+        orderUnit: "ADET",
+        plannedFinishDate: "2026-03-20",
+        departmentCode: "CUT02",
+        priority: "NORMAL"
+      }
+    ]
+  };
+}
+
+async function seedOptimizationRequest(
+  repository: OptimizationRequestsRepositoryShape,
+  input: {
+    weekNumber: number;
+    sourceBatchId: string;
+    payloadJson: OptimizationRequestPayload;
+    status: "created" | "ready" | "queued" | "failed_preparation";
+    matchedRows: number;
+    unmatchedRows: number;
+  }
+): Promise<OptimizationRequestRecord> {
+  const createdRequest = await repository.create({
+    weekNumber: input.weekNumber,
+    sourceBatchId: input.sourceBatchId,
+    payloadJson: input.payloadJson,
+    matchedRows: input.matchedRows,
+    unmatchedRows: input.unmatchedRows
+  });
+
+  if (input.status === "created") {
+    return createdRequest;
+  }
+
+  if (input.status === "ready") {
+    return repository.updateStatus({
+      id: createdRequest.id,
+      status: "ready"
+    });
+  }
+
+  if (input.status === "failed_preparation") {
+    return repository.updateStatus({
+      id: createdRequest.id,
+      status: "failed_preparation"
+    });
+  }
+
+  const readyRequest = await repository.updateStatus({
+    id: createdRequest.id,
+    status: "ready"
+  });
+
+  return repository.markQueuedFromReady({
+    id: readyRequest.id,
+    queuedAt: "2026-03-18T09:00:00.000Z"
+  });
+}
+
+function toOptimizationRequestSummaryResponse(
+  request: OptimizationRequestRecord
+): OptimizationRequestSummaryResponse {
+  return {
+    id: request.id,
+    weekNumber: request.weekNumber,
+    sourceBatchId: request.sourceBatchId,
+    status: request.status,
+    matchedRows: request.matchedRows,
+    unmatchedRows: request.unmatchedRows,
+    queuedAt: request.queuedAt,
+    createdAt: request.createdAt,
+    updatedAt: request.updatedAt
   };
 }
 

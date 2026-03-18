@@ -24,6 +24,8 @@ import {
   CreateOptimizationRequestResponseDto,
   OptimizationRequestDetailResponseDto,
   OptimizationRequestPreparationFailedResponseDto,
+  OptimizationRequestRequeueRejectedResponseDto,
+  OptimizationRequestRequeueResponseDto,
   OptimizationRequestSummaryDto
 } from "./dto/optimization-request-response.dto";
 import { OptimizationRequestsService } from "./optimization-requests.service";
@@ -76,6 +78,19 @@ export class OptimizationRequestsController {
     return this.optimizationRequestsService.createRequest(request);
   }
 
+  @Get("ready")
+  @ApiOperation({
+    summary:
+      'List optimization requests that remain in "ready" state and are eligible for manual requeue.'
+  })
+  @ApiOkResponse({
+    type: OptimizationRequestSummaryDto,
+    isArray: true
+  })
+  async findReady(): Promise<OptimizationRequestSummaryDto[]> {
+    return this.optimizationRequestsService.findReady();
+  }
+
   @Get()
   @ApiOperation({
     summary: "List persisted optimization requests ordered newest first."
@@ -105,5 +120,29 @@ export class OptimizationRequestsController {
     @Param("id") id: string
   ): Promise<OptimizationRequestDetailResponseDto> {
     return this.optimizationRequestsService.findById(id);
+  }
+
+  @Post(":id/requeue")
+  @HttpCode(200)
+  @ApiOperation({
+    summary:
+      'Manually re-publish an optimization request that is still in "ready" state.'
+  })
+  @ApiParam({
+    name: "id"
+  })
+  @ApiOkResponse({
+    type: OptimizationRequestRequeueResponseDto
+  })
+  @ApiNotFoundResponse({
+    description: "Optimization request was not found."
+  })
+  @ApiUnprocessableEntityResponse({
+    type: OptimizationRequestRequeueRejectedResponseDto
+  })
+  async requeueRequest(
+    @Param("id") id: string
+  ): Promise<OptimizationRequestRequeueResponseDto> {
+    return this.optimizationRequestsService.requeueRequest(id);
   }
 }

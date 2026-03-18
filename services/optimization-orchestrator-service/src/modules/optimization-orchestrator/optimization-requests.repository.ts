@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 
 import { Inject, Injectable } from "@nestjs/common";
-import { desc, eq, sql } from "drizzle-orm";
+import { and, desc, eq, sql } from "drizzle-orm";
 
 import type {
   OptimizationRequestPayload,
@@ -27,6 +27,11 @@ export type UpdateOptimizationRequestStatusRecord = {
   id: string;
   status: OptimizationRequestStatus;
   queuedAt?: string;
+};
+
+export type MarkOptimizationRequestQueuedRecord = {
+  id: string;
+  queuedAt: string;
 };
 
 @Injectable()
@@ -97,6 +102,17 @@ export class OptimizationRequestsRepository {
       );
   }
 
+  async findReady(): Promise<OptimizationRequestRecord[]> {
+    return this.databaseClient
+      .select()
+      .from(optimizationRequests)
+      .where(eq(optimizationRequests.status, "ready"))
+      .orderBy(
+        desc(optimizationRequests.createdAt),
+        desc(optimizationRequests.id)
+      );
+  }
+
   async findById(id: string): Promise<OptimizationRequestRecord | null> {
     const [request] = await this.databaseClient
       .select()
@@ -105,5 +121,32 @@ export class OptimizationRequestsRepository {
       .limit(1);
 
     return request ?? null;
+  }
+
+  async markQueuedFromReady(
+    input: MarkOptimizationRequestQueuedRecord
+  ): Promise<OptimizationRequestRecord> {
+    const [updatedRequest] = await this.databaseClient
+      .update(optimizationRequests)
+      .set({
+        status: "queued",
+        queuedAt: input.queuedAt,
+        updatedAt: sql`now()`
+      })
+      .where(
+        and(
+          eq(optimizationRequests.id, input.id),
+          eq(optimizationRequests.status, "ready")
+        )
+      )
+      .returning();
+
+    if (!updatedRequest) {
+      throw new Error(
+        `Failed to mark optimization request "${input.id}" as queued from ready state.`
+      );
+    }
+
+    return updatedRequest;
   }
 }

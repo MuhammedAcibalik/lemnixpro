@@ -77,3 +77,23 @@ export class OptimizationRequestDetailResponseDto {
   })
   payloadPreview!: OptimizationRequestPayloadDto;
 }
+
+export class OptimizationRequestRequeueResponseDto {
+  @ApiProperty({
+    type: () => OptimizationRequestSummaryDto
+  })
+  request!: OptimizationRequestSummaryDto;
+
+  @ApiProperty()
+  message!: string;
+}
+
+export class OptimizationRequestRequeueRejectedResponseDto {
+  @ApiProperty({
+    type: () => OptimizationRequestSummaryDto
+  })
+  request!: OptimizationRequestSummaryDto;
+
+  @ApiProperty()
+  message!: string;
+}
