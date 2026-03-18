@@ -25,6 +25,7 @@ import {
 } from "./production-plan-import.parser";
 import {
   ActiveProductionPlanBatchMustRemainEligibleError,
+  ProductionPlanImportBatchActivationConflictError,
   ProductionPlanImportBatchNotActivatableError,
   ProductionPlanImportsRepository
 } from "./production-plan-imports.repository";
@@ -154,7 +155,10 @@ export class ProductionPlanImportsService {
 
       return this.toBatchResponse(activatedBatch);
     } catch (error) {
-      if (error instanceof ProductionPlanImportBatchNotActivatableError) {
+      if (
+        error instanceof ProductionPlanImportBatchNotActivatableError ||
+        error instanceof ProductionPlanImportBatchActivationConflictError
+      ) {
         throw new ConflictException(error.message);
       }
 

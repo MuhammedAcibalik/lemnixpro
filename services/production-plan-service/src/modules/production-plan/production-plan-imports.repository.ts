@@ -14,6 +14,9 @@ import {
 } from "../../infrastructure/db/schema";
 
 const INSERT_CHUNK_SIZE = 500;
+const POSTGRES_UNIQUE_VIOLATION_CODE = "23505";
+const ACTIVE_BATCH_PER_WEEK_UNIQUE_INDEX =
+  "production_plan_import_batches_active_week_unique";
 
 export class ProductionPlanImportBatchNotActivatableError extends Error {
   constructor(batchId: string) {
@@ -21,6 +24,15 @@ export class ProductionPlanImportBatchNotActivatableError extends Error {
       `Production plan import batch "${batchId}" is not eligible for activation.`
     );
     this.name = "ProductionPlanImportBatchNotActivatableError";
+  }
+}
+
+export class ProductionPlanImportBatchActivationConflictError extends Error {
+  constructor(batchId: string) {
+    super(
+      `Production plan import batch "${batchId}" could not be activated because another batch became active for the same week concurrently.`
+    );
+    this.name = "ProductionPlanImportBatchActivationConflictError";
   }
 }
 
@@ -196,54 +208,62 @@ export class ProductionPlanImportsRepository {
   }
 
   async activateBatchById(id: string): Promise<ProductionPlanImportBatch | null> {
-    return this.databaseClient.transaction(async (transaction) => {
-      const [targetBatch] = await transaction
-        .select()
-        .from(productionPlanImportBatches)
-        .where(eq(productionPlanImportBatches.id, id))
-        .limit(1);
+    try {
+      return await this.databaseClient.transaction(async (transaction) => {
+        const [targetBatch] = await transaction
+          .select()
+          .from(productionPlanImportBatches)
+          .where(eq(productionPlanImportBatches.id, id))
+          .limit(1);
 
-      if (!targetBatch) {
-        return null;
+        if (!targetBatch) {
+          return null;
+        }
+
+        if (targetBatch.status === "active") {
+          return targetBatch;
+        }
+
+        if (targetBatch.weekNumber === null || targetBatch.validRowCount <= 0) {
+          throw new ProductionPlanImportBatchNotActivatableError(id);
+        }
+
+        await transaction
+          .update(productionPlanImportBatches)
+          .set({
+            status: "superseded",
+            updatedAt: sql`now()`
+          })
+          .where(
+            and(
+              eq(productionPlanImportBatches.weekNumber, targetBatch.weekNumber),
+              eq(productionPlanImportBatches.status, "active")
+            )
+          );
+
+        const [activatedBatch] = await transaction
+          .update(productionPlanImportBatches)
+          .set({
+            status: "active",
+            activatedAt: sql`now()`,
+            updatedAt: sql`now()`
+          })
+          .where(eq(productionPlanImportBatches.id, id))
+          .returning();
+
+        if (!activatedBatch) {
+          throw new Error(`Failed to activate production plan batch "${id}".`);
+        }
+
+        return activatedBatch;
+      });
+    } catch (error) {
+      if (isActiveBatchPerWeekUniqueViolation(error)) {
+        throw new ProductionPlanImportBatchActivationConflictError(id);
       }
 
-      if (targetBatch.status === "active") {
-        return targetBatch;
-      }
-
-      if (targetBatch.weekNumber === null || targetBatch.validRowCount <= 0) {
-        throw new ProductionPlanImportBatchNotActivatableError(id);
-      }
-
-      await transaction
-        .update(productionPlanImportBatches)
-        .set({
-          status: "superseded",
-          updatedAt: sql`now()`
-        })
-        .where(
-          and(
-            eq(productionPlanImportBatches.weekNumber, targetBatch.weekNumber),
-            eq(productionPlanImportBatches.status, "active")
-          )
-        );
-
-      const [activatedBatch] = await transaction
-        .update(productionPlanImportBatches)
-        .set({
-          status: "active",
-          activatedAt: sql`now()`,
-          updatedAt: sql`now()`
-        })
-        .where(eq(productionPlanImportBatches.id, id))
-        .returning();
-
-      if (!activatedBatch) {
-        throw new Error(`Failed to activate production plan batch "${id}".`);
-      }
-
-      return activatedBatch;
-    });
+      throw error;
+    }
   }
 
   async findRowsByBatchId(batchId: string): Promise<ProductionPlanRow[]> {
@@ -373,4 +393,24 @@ export class ProductionPlanImportsRepository {
 
     return chunks;
   }
+}
+
+type PostgresConstraintError = {
+  code?: string;
+  constraint?: string;
+};
+
+function isActiveBatchPerWeekUniqueViolation(
+  error: unknown
+): error is PostgresConstraintError {
+  if (!error || typeof error !== "object") {
+    return false;
+  }
+
+  const { code, constraint } = error as PostgresConstraintError;
+
+  return (
+    code === POSTGRES_UNIQUE_VIOLATION_CODE &&
+    constraint === ACTIVE_BATCH_PER_WEEK_UNIQUE_INDEX
+  );
 }

@@ -741,6 +741,36 @@ describe("production-plan-service imports", () => {
 
     expect(response.body.message).toContain("not eligible for activation");
 
+    const legacyLikeBatchId = crypto.randomUUID();
+    const legacyLikeTimestamp = new Date().toISOString();
+    await memoryPool.query(
+      `insert into production_plan.production_plan_import_batches
+        (id, file_name, sheet_name, week_number, status, total_row_count, valid_row_count, invalid_row_count, activated_at, created_at, updated_at)
+      values
+        ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
+      [
+        legacyLikeBatchId,
+        "legacy-unresolved-week.xlsx",
+        "Legacy Plan",
+        null,
+        "imported",
+        2,
+        2,
+        0,
+        null,
+        legacyLikeTimestamp,
+        legacyLikeTimestamp
+      ]
+    );
+
+    const legacyLikeResponse = await request(httpServer)
+      .post(`/production-plan-imports/${legacyLikeBatchId}/activate`)
+      .expect(409);
+
+    expect(legacyLikeResponse.body.message).toContain(
+      "not eligible for activation"
+    );
+
     await request(httpServer)
       .get("/production-plan-weeks/12/active-batch")
       .expect(404);
@@ -753,6 +783,20 @@ describe("production-plan-service imports", () => {
       .get("/production-plan-weeks/0/batches")
       .expect(400);
     expect(zeroWeekResponse.body.message).toContain(
+      "weekNumber must be a positive integer"
+    );
+
+    const negativeWeekResponse = await request(httpServer)
+      .get("/production-plan-weeks/-1/batches")
+      .expect(400);
+    expect(negativeWeekResponse.body.message).toContain(
+      "weekNumber must be a positive integer"
+    );
+
+    const decimalWeekResponse = await request(httpServer)
+      .get("/production-plan-weeks/12.5/active-batch")
+      .expect(400);
+    expect(decimalWeekResponse.body.message).toContain(
       "weekNumber must be a positive integer"
     );
 
