@@ -30,6 +30,10 @@ export const optimizationRequests = optimizationSchema.table(
       .notNull(),
     matchedRows: integer("matched_rows").notNull(),
     unmatchedRows: integer("unmatched_rows").notNull(),
+    queuedAt: timestamp("queued_at", {
+      mode: "string",
+      withTimezone: true
+    }),
     createdAt: timestamp("created_at", {
       mode: "string",
       withTimezone: true

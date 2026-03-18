@@ -9,9 +9,6 @@ import { OptimizationRequestsService } from "./optimization-requests.service";
 @Module({
   imports: [InfrastructureModule],
   controllers: [OptimizationRequestsController],
-  providers: [
-    OptimizationRequestsService,
-    OptimizationRequestsRepository
-  ]
+  providers: [OptimizationRequestsService, OptimizationRequestsRepository]
 })
 export class OptimizationOrchestratorModule {}

@@ -34,6 +34,10 @@ class EnvironmentVariables {
   @IsString()
   RABBITMQ_URL = "amqp://guest:guest@localhost:5672";
 
+  @IsString()
+  @IsNotEmpty()
+  OPTIMIZATION_REQUEST_QUEUE = "optimization.requests";
+
   @IsUrl({
     require_tld: false
   })

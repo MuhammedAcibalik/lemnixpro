@@ -5,7 +5,7 @@ import {
   UnprocessableEntityException
 } from "@nestjs/common";
 
-import type { OptimizationRequestStatus } from "@lemnixpro/shared-contracts";
+import type { OptimizationQueueEnvelope } from "@lemnixpro/shared-contracts";
 
 import {
   MainProfileResponse,
@@ -33,6 +33,10 @@ import type {
   OptimizationRequestDetailResponseDto,
   OptimizationRequestSummaryDto
 } from "./dto/optimization-request-response.dto";
+import {
+  OPTIMIZATION_REQUEST_QUEUE_PUBLISHER,
+  type OptimizationRequestQueuePublisher
+} from "./optimization-request-queue.publisher";
 import { OptimizationRequestsRepository } from "./optimization-requests.repository";
 
 type RowEvaluationResult =
@@ -63,6 +67,8 @@ export class OptimizationRequestsService {
     private readonly productionPlanClient: ProductionPlanClient,
     @Inject(MasterDataClient)
     private readonly masterDataClient: MasterDataClient,
+    @Inject(OPTIMIZATION_REQUEST_QUEUE_PUBLISHER)
+    private readonly optimizationRequestQueuePublisher: OptimizationRequestQueuePublisher,
     @Inject(OptimizationRequestsRepository)
     private readonly optimizationRequestsRepository: OptimizationRequestsRepository
   ) {}
@@ -90,28 +96,47 @@ export class OptimizationRequestsService {
     request: CreateOptimizationRequestDto
   ): Promise<CreateOptimizationRequestResponseDto> {
     const preparedRequest = await this.prepareOptimizationRequest(request);
-    const status = this.resolveRequestStatus(preparedRequest);
-    const persistedRequest = await this.optimizationRequestsRepository.create({
+    const createdRequest = await this.optimizationRequestsRepository.create({
       weekNumber: preparedRequest.weekNumber,
       sourceBatchId: preparedRequest.payloadPreview.sourceBatchId,
-      status,
       payloadJson: preparedRequest.payloadPreview,
       matchedRows: preparedRequest.matchedRows,
       unmatchedRows: preparedRequest.unmatchedRows
     });
-    const response = this.toCreateRequestResponse(
-      persistedRequest,
-      preparedRequest
-    );
 
-    if (status === "failed_preparation") {
+    if (!this.hasUsableDemandRows(preparedRequest)) {
+      const failedRequest = await this.optimizationRequestsRepository.updateStatus({
+        id: createdRequest.id,
+        status: "failed_preparation"
+      });
+      const response = this.toCreateRequestResponse(
+        failedRequest,
+        preparedRequest
+      );
+
       throw new UnprocessableEntityException({
         message: `Optimization request for week "${request.weekNumber}" could not be prepared because no optimization-ready rows were available.`,
         ...response
       });
     }
 
-    return response;
+    const readyRequest = await this.optimizationRequestsRepository.updateStatus({
+      id: createdRequest.id,
+      status: "ready"
+    });
+    const queuedAt = new Date().toISOString();
+
+    await this.optimizationRequestQueuePublisher.publish(
+      this.toQueueEnvelope(readyRequest, queuedAt)
+    );
+
+    const queuedRequest = await this.optimizationRequestsRepository.updateStatus({
+      id: createdRequest.id,
+      status: "queued",
+      queuedAt
+    });
+
+    return this.toCreateRequestResponse(queuedRequest, preparedRequest);
   }
 
   async findAll(): Promise<OptimizationRequestSummaryDto[]> {
@@ -188,10 +213,10 @@ export class OptimizationRequestsService {
     };
   }
 
-  private resolveRequestStatus(
+  private hasUsableDemandRows(
     preparedRequest: PreparedOptimizationRequest
-  ): OptimizationRequestStatus {
-    return preparedRequest.matchedRows > 0 ? "ready" : "failed_preparation";
+  ): boolean {
+    return preparedRequest.matchedRows > 0;
   }
 
   private toCreateRequestResponse(
@@ -215,8 +240,22 @@ export class OptimizationRequestsService {
       status: request.status,
       matchedRows: request.matchedRows,
       unmatchedRows: request.unmatchedRows,
+      queuedAt: request.queuedAt,
       createdAt: request.createdAt,
       updatedAt: request.updatedAt
+    };
+  }
+
+  private toQueueEnvelope(
+    request: OptimizationRequestRecord,
+    queuedAt: string
+  ): OptimizationQueueEnvelope {
+    return {
+      requestId: request.id,
+      weekNumber: request.weekNumber,
+      sourceBatchId: request.sourceBatchId,
+      payload: request.payloadJson,
+      queuedAt
     };
   }
 

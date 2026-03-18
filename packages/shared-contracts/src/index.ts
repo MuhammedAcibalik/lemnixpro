@@ -62,6 +62,7 @@ export type CurrentUserResponse = {
 export const optimizationRequestStatuses = [
   "created",
   "ready",
+  "queued",
   "failed_preparation"
 ] as const;
 
@@ -110,16 +111,20 @@ export type OptimizationRequestSummary = {
   status: OptimizationRequestStatus;
   matchedRows: number;
   unmatchedRows: number;
+  queuedAt: UtcTimestamp | null;
   createdAt: UtcTimestamp;
   updatedAt: UtcTimestamp;
 };
 
-export type OptimizationRequestedMessage = {
-  jobId: EntityId;
-  weekCode: string;
-  requestedAt: UtcTimestamp;
-  requestedBy: EntityId;
+export type OptimizationQueueEnvelope = {
+  requestId: EntityId;
+  weekNumber: number;
+  sourceBatchId: EntityId;
+  payload: OptimizationRequestPayload;
+  queuedAt: UtcTimestamp;
 };
+
+export type OptimizationRequestedMessage = OptimizationQueueEnvelope;
 
 export type OptimizationCompletedMessage = {
   jobId: EntityId;

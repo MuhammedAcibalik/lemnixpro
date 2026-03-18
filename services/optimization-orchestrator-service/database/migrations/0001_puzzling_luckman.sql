@@ -1,0 +1,2 @@
+ALTER TYPE "optimization"."optimization_request_status" ADD VALUE 'queued' BEFORE 'failed_preparation';--> statement-breakpoint
+ALTER TABLE "optimization"."optimization_requests" ADD COLUMN "queued_at" timestamp with time zone;

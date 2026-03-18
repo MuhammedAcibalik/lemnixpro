@@ -8,10 +8,15 @@ import { newDb } from "pg-mem";
 import request from "supertest";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import type { OptimizationRequestPayload } from "@lemnixpro/shared-contracts";
+import type {
+  OptimizationQueueEnvelope,
+  OptimizationRequestPayload
+} from "@lemnixpro/shared-contracts";
+import type { OptimizationRequestQueuePublisher } from "../src/modules/optimization-orchestrator/optimization-request-queue.publisher";
 import type {
   CreateOptimizationRequestRecord,
-  OptimizationRequestsRepository
+  OptimizationRequestsRepository,
+  UpdateOptimizationRequestStatusRecord
 } from "../src/modules/optimization-orchestrator/optimization-requests.repository";
 
 type QueryResult<Row> = {
@@ -30,9 +35,10 @@ type OptimizationRequestSummaryResponse = {
   id: string;
   weekNumber: number;
   sourceBatchId: string;
-  status: "created" | "ready" | "failed_preparation";
+  status: "created" | "ready" | "queued" | "failed_preparation";
   matchedRows: number;
   unmatchedRows: number;
+  queuedAt: string | null;
   createdAt: string;
   updatedAt: string;
 };
@@ -89,10 +95,11 @@ type PersistedOptimizationRequestRow = {
   id: string;
   week_number: number;
   source_batch_id: string;
-  status: "created" | "ready" | "failed_preparation";
+  status: "created" | "ready" | "queued" | "failed_preparation";
   payload_json: Record<string, unknown> | string;
   matched_rows: number;
   unmatched_rows: number;
+  queued_at: Date | string | null;
   created_at: Date | string;
   updated_at: Date | string;
 };
@@ -113,7 +120,7 @@ const mainProfileIds = {
 
 type OptimizationRequestsRepositoryShape = Pick<
   OptimizationRequestsRepository,
-  "create" | "findAll" | "findById"
+  "create" | "updateStatus" | "findAll" | "findById"
 >;
 
 describe("optimization-orchestrator-service optimization requests", () => {
@@ -121,10 +128,13 @@ describe("optimization-orchestrator-service optimization requests", () => {
   let memoryPool: QueryablePool;
   let productionPlanStubServer: ReturnType<typeof createServer>;
   let masterDataStubServer: ReturnType<typeof createServer>;
+  let publishedEnvelopes: OptimizationQueueEnvelope[];
   let AppModule: typeof import("../src/app.module").AppModule;
+  let optimizationRequestQueuePublisherToken: typeof import("../src/modules/optimization-orchestrator/optimization-request-queue.publisher").OPTIMIZATION_REQUEST_QUEUE_PUBLISHER;
   let OptimizationRequestsRepositoryClass: typeof import("../src/modules/optimization-orchestrator/optimization-requests.repository").OptimizationRequestsRepository;
 
   beforeEach(async () => {
+    publishedEnvelopes = [];
     productionPlanStubServer = createServer((requestMessage, responseMessage) => {
       const requestUrl = requestMessage.url ?? "";
 
@@ -197,11 +207,18 @@ describe("optimization-orchestrator-service optimization requests", () => {
     process.env.DATABASE_URL =
       "postgresql://postgres:postgres@localhost:5432/lemnixpro";
     process.env.RABBITMQ_URL = "amqp://guest:guest@localhost:5672";
+    process.env.OPTIMIZATION_REQUEST_QUEUE = "optimization.requests.test";
     process.env.PRODUCTION_PLAN_SERVICE_BASE_URL = `http://127.0.0.1:${productionPlanAddress.port}`;
     process.env.MASTER_DATA_SERVICE_BASE_URL = `http://127.0.0.1:${masterDataAddress.port}`;
 
     vi.resetModules();
     ({ AppModule } = await import("../src/app.module"));
+    ({
+      OPTIMIZATION_REQUEST_QUEUE_PUBLISHER:
+        optimizationRequestQueuePublisherToken
+    } = await import(
+      "../src/modules/optimization-orchestrator/optimization-request-queue.publisher"
+    ));
     ({ OptimizationRequestsRepository: OptimizationRequestsRepositoryClass } =
       await import(
         "../src/modules/optimization-orchestrator/optimization-requests.repository"
@@ -220,12 +237,19 @@ describe("optimization-orchestrator-service optimization requests", () => {
 
     await createDatabaseSchema(memoryPool);
     const optimizationRequestsRepository = createRepositoryDouble(memoryPool);
+    const queuePublisherDouble: OptimizationRequestQueuePublisher = {
+      async publish(envelope) {
+        publishedEnvelopes.push(envelope);
+      }
+    };
 
     const moduleRef = await Test.createTestingModule({
       imports: [AppModule]
     })
       .overrideProvider(OptimizationRequestsRepositoryClass)
       .useValue(optimizationRequestsRepository)
+      .overrideProvider(optimizationRequestQueuePublisherToken)
+      .useValue(queuePublisherDouble)
       .compile();
 
     app = moduleRef.createNestApplication();
@@ -268,7 +292,7 @@ describe("optimization-orchestrator-service optimization requests", () => {
     ]);
   });
 
-  it("creates and persists a ready optimization request", async () => {
+  it("creates a queued optimization request and publishes the queue envelope", async () => {
     const httpServer = app.getHttpServer() as Parameters<typeof request>[0];
 
     const response = await request(httpServer)
@@ -282,10 +306,11 @@ describe("optimization-orchestrator-service optimization requests", () => {
     expect(body.request).toMatchObject({
       weekNumber: 14,
       sourceBatchId: batchIds.week14,
-      status: "ready",
+      status: "queued",
       matchedRows: 2,
       unmatchedRows: 0
     });
+    expect(body.request.queuedAt).toEqual(expect.any(String));
     expect(body.payloadPreview).toMatchObject({
       weekNumber: 14,
       sourceBatchId: batchIds.week14,
@@ -329,6 +354,15 @@ describe("optimization-orchestrator-service optimization requests", () => {
       ]
     });
     expect(body.payloadPreview.demandRows).toHaveLength(2);
+    expect(publishedEnvelopes).toEqual([
+      {
+        requestId: body.request.id,
+        weekNumber: 14,
+        sourceBatchId: batchIds.week14,
+        payload: body.payloadPreview,
+        queuedAt: body.request.queuedAt
+      }
+    ]);
 
     const persistedRequests = await listPersistedOptimizationRequests(memoryPool);
 
@@ -336,16 +370,19 @@ describe("optimization-orchestrator-service optimization requests", () => {
     expect(persistedRequests[0]).toMatchObject({
       week_number: 14,
       source_batch_id: batchIds.week14,
-      status: "ready",
+      status: "queued",
       matched_rows: 2,
       unmatched_rows: 0
     });
+    expect(normalizeTimestamp(persistedRequests[0]?.queued_at)).toBe(
+      body.request.queuedAt
+    );
     expect(normalizePayloadJson(persistedRequests[0]?.payload_json)).toEqual(
       body.payloadPreview
     );
   });
 
-  it("creates a ready request when unmatched rows exist but usable rows remain", async () => {
+  it("creates a queued request when unmatched rows exist but usable rows remain", async () => {
     const httpServer = app.getHttpServer() as Parameters<typeof request>[0];
 
     const response = await request(httpServer)
@@ -359,10 +396,11 @@ describe("optimization-orchestrator-service optimization requests", () => {
     expect(body.request).toMatchObject({
       weekNumber: 12,
       sourceBatchId: batchIds.week12,
-      status: "ready",
+      status: "queued",
       matchedRows: 1,
       unmatchedRows: 3
     });
+    expect(body.request.queuedAt).toEqual(expect.any(String));
     expect(body.unmatchedSummary).toEqual({
       totalUnmatchedRows: 3,
       rowsMissingMasterDataLinkage: 3,
@@ -400,9 +438,10 @@ describe("optimization-orchestrator-service optimization requests", () => {
         }
       ]
     });
+    expect(publishedEnvelopes).toHaveLength(1);
   });
 
-  it("persists failed_preparation and rejects when no usable rows exist", async () => {
+  it("persists failed_preparation and does not publish when no usable rows exist", async () => {
     const httpServer = app.getHttpServer() as Parameters<typeof request>[0];
 
     const response = await request(httpServer)
@@ -419,7 +458,8 @@ describe("optimization-orchestrator-service optimization requests", () => {
       sourceBatchId: batchIds.week15,
       status: "failed_preparation",
       matchedRows: 0,
-      unmatchedRows: 2
+      unmatchedRows: 2,
+      queuedAt: null
     });
     expect(body.payloadPreview).toEqual({
       weekNumber: 15,
@@ -427,6 +467,7 @@ describe("optimization-orchestrator-service optimization requests", () => {
       mainProfiles: [],
       demandRows: []
     });
+    expect(publishedEnvelopes).toEqual([]);
 
     const persistedRequests = await listPersistedOptimizationRequests(memoryPool);
 
@@ -436,7 +477,8 @@ describe("optimization-orchestrator-service optimization requests", () => {
       source_batch_id: batchIds.week15,
       status: "failed_preparation",
       matched_rows: 0,
-      unmatched_rows: 2
+      unmatched_rows: 2,
+      queued_at: null
     });
   });
 
@@ -740,9 +782,9 @@ function createRepositoryDouble(
       const createdAt = nextTimestamp();
       const result = await memoryPool.query<PersistedOptimizationRequestRow>(
         `insert into optimization.optimization_requests
-          (id, week_number, source_batch_id, status, payload_json, matched_rows, unmatched_rows, created_at, updated_at)
+          (id, week_number, source_batch_id, status, payload_json, matched_rows, unmatched_rows, queued_at, created_at, updated_at)
         values
-          ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+          ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
         returning
           id,
           week_number,
@@ -751,16 +793,18 @@ function createRepositoryDouble(
           payload_json,
           matched_rows,
           unmatched_rows,
+          queued_at,
           created_at,
           updated_at`,
         [
           randomUUID(),
           input.weekNumber,
           input.sourceBatchId,
-          input.status,
+          "created",
           JSON.stringify(input.payloadJson),
           input.matchedRows,
           input.unmatchedRows,
+          null,
           createdAt,
           createdAt
         ]
@@ -774,6 +818,39 @@ function createRepositoryDouble(
 
       return createdRequest;
     },
+    async updateStatus(input: UpdateOptimizationRequestStatusRecord) {
+      const updatedAt = nextTimestamp();
+      const result = await memoryPool.query<PersistedOptimizationRequestRow>(
+        `update optimization.optimization_requests
+        set
+          status = $2,
+          queued_at = coalesce($3, queued_at),
+          updated_at = $4
+        where id = $1
+        returning
+          id,
+          week_number,
+          source_batch_id,
+          status,
+          payload_json,
+          matched_rows,
+          unmatched_rows,
+          queued_at,
+          created_at,
+          updated_at`,
+        [input.id, input.status, input.queuedAt ?? null, updatedAt]
+      );
+
+      const updatedRequest = mapPersistedOptimizationRequestRow(result.rows[0]);
+
+      if (!updatedRequest) {
+        throw new Error(
+          `Failed to update optimization request "${input.id}" to status "${input.status}".`
+        );
+      }
+
+      return updatedRequest;
+    },
     async findAll() {
       const result = await memoryPool.query<PersistedOptimizationRequestRow>(
         `select
@@ -784,6 +861,7 @@ function createRepositoryDouble(
           payload_json,
           matched_rows,
           unmatched_rows,
+          queued_at,
           created_at,
           updated_at
         from optimization.optimization_requests
@@ -804,6 +882,7 @@ function createRepositoryDouble(
           payload_json,
           matched_rows,
           unmatched_rows,
+          queued_at,
           created_at,
           updated_at
         from optimization.optimization_requests
@@ -821,7 +900,7 @@ async function createDatabaseSchema(memoryPool: QueryablePool): Promise<void> {
   await memoryPool.query(`create schema if not exists optimization;`);
   await memoryPool.query(`
     create type optimization.optimization_request_status as enum
-      ('created', 'ready', 'failed_preparation');
+      ('created', 'ready', 'queued', 'failed_preparation');
   `);
   await memoryPool.query(`
     create table optimization.optimization_requests (
@@ -832,6 +911,7 @@ async function createDatabaseSchema(memoryPool: QueryablePool): Promise<void> {
       payload_json jsonb not null,
       matched_rows integer not null,
       unmatched_rows integer not null,
+      queued_at timestamptz null,
       created_at timestamptz not null default now(),
       updated_at timestamptz not null default now()
     );
@@ -850,6 +930,7 @@ async function listPersistedOptimizationRequests(
       payload_json,
       matched_rows,
       unmatched_rows,
+      queued_at,
       created_at,
       updated_at
     from optimization.optimization_requests
@@ -892,11 +973,16 @@ function mapPersistedOptimizationRequestRow(
     payloadJson,
     matchedRows: row.matched_rows,
     unmatchedRows: row.unmatched_rows,
-    createdAt: normalizeTimestamp(row.created_at),
-    updatedAt: normalizeTimestamp(row.updated_at)
+    queuedAt: normalizeTimestamp(row.queued_at),
+    createdAt: normalizeTimestamp(row.created_at) ?? "",
+    updatedAt: normalizeTimestamp(row.updated_at) ?? ""
   };
 }
 
-function normalizeTimestamp(value: Date | string): string {
+function normalizeTimestamp(value: Date | string | null): string | null {
+  if (value === null) {
+    return null;
+  }
+
   return value instanceof Date ? value.toISOString() : value;
 }

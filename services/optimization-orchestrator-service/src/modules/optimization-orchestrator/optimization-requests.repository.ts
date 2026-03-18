@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 
 import { Inject, Injectable } from "@nestjs/common";
-import { desc, eq } from "drizzle-orm";
+import { desc, eq, sql } from "drizzle-orm";
 
 import type {
   OptimizationRequestPayload,
@@ -18,10 +18,15 @@ import {
 export type CreateOptimizationRequestRecord = {
   weekNumber: number;
   sourceBatchId: string;
-  status: OptimizationRequestStatus;
   payloadJson: OptimizationRequestPayload;
   matchedRows: number;
   unmatchedRows: number;
+};
+
+export type UpdateOptimizationRequestStatusRecord = {
+  id: string;
+  status: OptimizationRequestStatus;
+  queuedAt?: string;
 };
 
 @Injectable()
@@ -40,10 +45,11 @@ export class OptimizationRequestsRepository {
         id: randomUUID(),
         weekNumber: input.weekNumber,
         sourceBatchId: input.sourceBatchId,
-        status: input.status,
+        status: "created",
         payloadJson: input.payloadJson,
         matchedRows: input.matchedRows,
-        unmatchedRows: input.unmatchedRows
+        unmatchedRows: input.unmatchedRows,
+        queuedAt: null
       })
       .returning();
 
@@ -52,6 +58,33 @@ export class OptimizationRequestsRepository {
     }
 
     return createdRequest;
+  }
+
+  async updateStatus(
+    input: UpdateOptimizationRequestStatusRecord
+  ): Promise<OptimizationRequestRecord> {
+    const statusUpdate = {
+      status: input.status,
+      updatedAt: sql`now()`,
+      ...(input.status === "queued"
+        ? {
+            queuedAt: input.queuedAt ?? null
+          }
+        : {})
+    };
+    const [updatedRequest] = await this.databaseClient
+      .update(optimizationRequests)
+      .set(statusUpdate)
+      .where(eq(optimizationRequests.id, input.id))
+      .returning();
+
+    if (!updatedRequest) {
+      throw new Error(
+        `Failed to update optimization request "${input.id}" to status "${input.status}".`
+      );
+    }
+
+    return updatedRequest;
   }
 
   async findAll(): Promise<OptimizationRequestRecord[]> {

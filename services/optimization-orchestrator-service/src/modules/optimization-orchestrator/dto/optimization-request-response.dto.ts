@@ -1,4 +1,5 @@
 import { ApiProperty } from "@nestjs/swagger";
+import { ApiPropertyOptional } from "@nestjs/swagger";
 
 import {
   optimizationRequestStatuses,
@@ -30,6 +31,11 @@ export class OptimizationRequestSummaryDto implements OptimizationRequestSummary
 
   @ApiProperty()
   unmatchedRows!: number;
+
+  @ApiPropertyOptional({
+    nullable: true
+  })
+  queuedAt!: string | null;
 
   @ApiProperty()
   createdAt!: string;

@@ -1,9 +1,21 @@
 from typing import Literal
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 
 
-class OptimizationMainProfileInput(BaseModel):
+def to_camel(value: str) -> str:
+    parts = value.split("_")
+    return parts[0] + "".join(part.capitalize() for part in parts[1:])
+
+
+class SharedContractModel(BaseModel):
+    model_config = ConfigDict(
+        alias_generator=to_camel,
+        populate_by_name=True,
+    )
+
+
+class OptimizationMainProfileInput(SharedContractModel):
     id: str
     code: str
     name: str
@@ -12,7 +24,7 @@ class OptimizationMainProfileInput(BaseModel):
     stock_length_mm: int
 
 
-class OptimizationDemandRow(BaseModel):
+class OptimizationDemandRow(SharedContractModel):
     production_row_id: str
     row_index: int
     main_profile_id: str
@@ -31,24 +43,28 @@ class OptimizationDemandRow(BaseModel):
     priority: str | None = None
 
 
-class OptimizationRequestSummary(BaseModel):
+class OptimizationRequestSummary(SharedContractModel):
     id: str
     week_number: int
     source_batch_id: str
-    status: Literal["created", "ready", "failed_preparation"]
+    status: Literal["created", "ready", "queued", "failed_preparation"]
     matched_rows: int
     unmatched_rows: int
+    queued_at: str | None = None
     created_at: str
     updated_at: str
 
 
-class OptimizationRequestPayload(BaseModel):
+class OptimizationRequestPayload(SharedContractModel):
     week_number: int
     source_batch_id: str
     main_profiles: list[OptimizationMainProfileInput]
     demand_rows: list[OptimizationDemandRow]
 
 
-class OptimizationRequest(BaseModel):
-    request: OptimizationRequestSummary
+class OptimizationQueueEnvelope(SharedContractModel):
+    request_id: str
+    week_number: int
+    source_batch_id: str
     payload: OptimizationRequestPayload
+    queued_at: str
