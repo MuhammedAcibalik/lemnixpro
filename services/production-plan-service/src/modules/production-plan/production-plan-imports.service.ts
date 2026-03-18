@@ -13,6 +13,10 @@ import type {
   ProductionPlanRow
 } from "../../infrastructure/db/schema";
 
+import {
+  ProductionPlanActiveBatchRowResponseDto,
+  ProductionPlanActiveBatchRowsResponseDto
+} from "./dto/production-plan-active-batch-rows-response.dto";
 import { ProductionPlanImportBatchDetailResponseDto } from "./dto/production-plan-import-batch-detail-response.dto";
 import { ProductionPlanImportBatchResponseDto } from "./dto/production-plan-import-batch-response.dto";
 import { ProductionPlanImportRowResponseDto } from "./dto/production-plan-import-row-response.dto";
@@ -181,6 +185,26 @@ export class ProductionPlanImportsService {
     }
 
     return this.toBatchResponse(batch);
+  }
+
+  async findActiveBatchRowsByWeekNumber(
+    weekNumber: number
+  ): Promise<ProductionPlanActiveBatchRowsResponseDto> {
+    const activeBatchRows =
+      await this.productionPlanImportsRepository.findActiveBatchRowsByWeekNumber(
+        weekNumber
+      );
+
+    if (!activeBatchRows) {
+      throw new NotFoundException(
+        `No active production plan import batch exists for week "${weekNumber}".`
+      );
+    }
+
+    return {
+      batch: this.toBatchResponse(activeBatchRows.batch),
+      rows: activeBatchRows.rows.map((row) => this.toActiveBatchRowResponse(row))
+    };
   }
 
   async updateRow(
@@ -374,6 +398,31 @@ export class ProductionPlanImportsService {
       validationErrors: row.validationErrors,
       createdAt: row.createdAt,
       updatedAt: row.updatedAt
+    };
+  }
+
+  private toActiveBatchRowResponse(
+    row: ProductionPlanRow
+  ): ProductionPlanActiveBatchRowResponseDto {
+    return {
+      id: row.id,
+      rowIndex: row.rowIndex,
+      weekRaw: row.weekRaw,
+      weekNumber: row.weekNumber,
+      customerName: row.customerName,
+      orderingPartyCode: row.orderingPartyCode,
+      customerOrderNumber: row.customerOrderNumber,
+      customerOrderItemNumber: row.customerOrderItemNumber,
+      workOrderNumber: row.workOrderNumber,
+      materialCode: row.materialCode,
+      materialName: row.materialName,
+      quantity: row.quantity,
+      orderUnit: row.orderUnit,
+      plannedFinishDate: row.plannedFinishDate,
+      departmentCode: row.departmentCode,
+      priority: row.priority,
+      isValid: row.isValid,
+      validationErrors: row.validationErrors
     };
   }
 

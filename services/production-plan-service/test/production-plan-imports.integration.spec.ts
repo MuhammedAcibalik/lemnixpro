@@ -60,6 +60,32 @@ type ProductionPlanImportRowResponse = {
   updatedAt: string;
 };
 
+type ProductionPlanActiveBatchRowResponse = {
+  id: string;
+  rowIndex: number;
+  weekRaw: string | null;
+  weekNumber: number | null;
+  customerName: string | null;
+  orderingPartyCode: string | null;
+  customerOrderNumber: string | null;
+  customerOrderItemNumber: string | null;
+  workOrderNumber: string | null;
+  materialCode: string | null;
+  materialName: string | null;
+  quantity: number | null;
+  orderUnit: string | null;
+  plannedFinishDate: string | null;
+  departmentCode: string | null;
+  priority: string | null;
+  isValid: boolean;
+  validationErrors: string[];
+};
+
+type ProductionPlanActiveBatchRowsResponse = {
+  batch: ProductionPlanImportBatchResponse;
+  rows: ProductionPlanActiveBatchRowResponse[];
+};
+
 type ProductionPlanImportBatchRow = {
   id: string;
   file_name: string;
@@ -112,6 +138,7 @@ type ProductionPlanImportsRepositoryShape = Pick<
   ProductionPlanImportsRepository,
   | "activateBatchById"
   | "createImportBatch"
+  | "findActiveBatchRowsByWeekNumber"
   | "findActiveBatchByWeekNumber"
   | "findImportBatches"
   | "findImportBatchesByWeekNumber"
@@ -637,6 +664,150 @@ describe("production-plan-service imports", () => {
     });
   });
 
+  it("returns 404 when no active batch exists for active-batch rows lookup", async () => {
+    const httpServer = app.getHttpServer() as Parameters<typeof request>[0];
+
+    await createImport(
+      httpServer,
+      {
+        "Weekly Plan": [buildRequiredHeaders(), buildProductionPlanRow()]
+      },
+      "week-12-imported-only.xlsx"
+    );
+
+    const response = await request(httpServer)
+      .get("/production-plan-weeks/12/active-batch/rows")
+      .expect(404);
+
+    expect(response.body.message).toContain(
+      'No active production plan import batch exists for week "12"'
+    );
+  });
+
+  it("returns the active batch summary with only its rows ordered by rowIndex", async () => {
+    const httpServer = app.getHttpServer() as Parameters<typeof request>[0];
+    const supersededBatch = await createImport(
+      httpServer,
+      {
+        "Weekly Plan": [
+          buildRequiredHeaders(),
+          buildProductionPlanRow({
+            customerName: "Superseded Customer",
+            customerOrderNumber: "000124",
+            workOrderNumber: "WO-002"
+          })
+        ]
+      },
+      "week-12-superseded-rows.xlsx"
+    );
+    const activeBatch = await createImport(
+      httpServer,
+      {
+        "Weekly Plan": [
+          buildRequiredHeaders(),
+          buildProductionPlanRow({
+            customerName: "Active Customer A",
+            customerOrderNumber: "000125",
+            workOrderNumber: "WO-003"
+          }),
+          buildProductionPlanRow({
+            customerName: "Active Customer B",
+            customerOrderNumber: "000126",
+            workOrderNumber: "WO-004"
+          })
+        ]
+      },
+      "week-12-active-rows.xlsx"
+    );
+    const importedBatch = await createImport(
+      httpServer,
+      {
+        "Weekly Plan": [
+          buildRequiredHeaders(),
+          buildProductionPlanRow({
+            customerName: "Imported Customer",
+            customerOrderNumber: "000127",
+            workOrderNumber: "WO-005"
+          })
+        ]
+      },
+      "week-12-imported-rows.xlsx"
+    );
+
+    await request(httpServer)
+      .post(`/production-plan-imports/${supersededBatch.id}/activate`)
+      .expect(200);
+    await request(httpServer)
+      .post(`/production-plan-imports/${activeBatch.id}/activate`)
+      .expect(200);
+
+    const activeBatchRowsResponse = await request(httpServer)
+      .get(`/production-plan-imports/${activeBatch.id}/rows`)
+      .expect(200);
+    const activeBatchRows =
+      activeBatchRowsResponse.body as ProductionPlanImportRowResponse[];
+
+    const supersededBatchRowsResponse = await request(httpServer)
+      .get(`/production-plan-imports/${supersededBatch.id}/rows`)
+      .expect(200);
+    const supersededBatchRows =
+      supersededBatchRowsResponse.body as ProductionPlanImportRowResponse[];
+
+    const importedBatchRowsResponse = await request(httpServer)
+      .get(`/production-plan-imports/${importedBatch.id}/rows`)
+      .expect(200);
+    const importedBatchRows =
+      importedBatchRowsResponse.body as ProductionPlanImportRowResponse[];
+
+    const response = await request(httpServer)
+      .get("/production-plan-weeks/12/active-batch/rows")
+      .expect(200);
+    const payload = response.body as ProductionPlanActiveBatchRowsResponse;
+
+    expect(payload.batch).toMatchObject({
+      id: activeBatch.id,
+      weekNumber: 12,
+      fileName: "week-12-active-rows.xlsx",
+      sheetName: "Weekly Plan",
+      status: "active",
+      totalRowCount: 2,
+      validRowCount: 2,
+      invalidRowCount: 0
+    });
+    expect(payload.batch.activatedAt).toBeTruthy();
+
+    expect(payload.rows.map((row) => row.rowIndex)).toEqual([2, 3]);
+    expect(payload.rows.map((row) => row.id)).toEqual(
+      activeBatchRows.map((row) => row.id)
+    );
+    expect(payload.rows).toMatchObject([
+      {
+        id: activeBatchRows[0]!.id,
+        rowIndex: 2,
+        customerName: "Active Customer A",
+        customerOrderNumber: "000125",
+        workOrderNumber: "WO-003",
+        isValid: true,
+        validationErrors: []
+      },
+      {
+        id: activeBatchRows[1]!.id,
+        rowIndex: 3,
+        customerName: "Active Customer B",
+        customerOrderNumber: "000126",
+        workOrderNumber: "WO-004",
+        isValid: true,
+        validationErrors: []
+      }
+    ]);
+    expect(payload.rows.map((row) => row.id)).not.toContain(
+      supersededBatchRows[0]!.id
+    );
+    expect(payload.rows.map((row) => row.id)).not.toContain(
+      importedBatchRows[0]!.id
+    );
+  });
+
   it("orders week batches by lifecycle importance and recency within the same status", async () => {
     const httpServer = app.getHttpServer() as Parameters<typeof request>[0];
     const supersededBatch = await createImport(
@@ -794,14 +965,14 @@ describe("production-plan-service imports", () => {
     );
 
     const decimalWeekResponse = await request(httpServer)
-      .get("/production-plan-weeks/12.5/active-batch")
+      .get("/production-plan-weeks/12.5/active-batch/rows")
       .expect(400);
     expect(decimalWeekResponse.body.message).toContain(
       "weekNumber must be a positive integer"
     );
 
     const nonNumericWeekResponse = await request(httpServer)
-      .get("/production-plan-weeks/not-a-number/active-batch")
+      .get("/production-plan-weeks/not-a-number/active-batch/rows")
       .expect(400);
     expect(nonNumericWeekResponse.body.message).toContain(
       "weekNumber must be a positive integer"
@@ -1189,6 +1360,29 @@ function createRepositoryDouble(
       );
 
       return mapBatchRow(result.rows[0] as ProductionPlanImportBatchRow | undefined);
+    },
+    async findActiveBatchRowsByWeekNumber(
+      weekNumber: number
+    ): Promise<{
+      batch: ProductionPlanImportBatchResponse;
+      rows: ProductionPlanImportRowResponse[];
+    } | null> {
+      const batch = (await this.findActiveBatchByWeekNumber(
+        weekNumber
+      )) as ProductionPlanImportBatchResponse | null;
+
+      if (!batch) {
+        return null;
+      }
+
+      const rows = (await this.findRowsByBatchId(
+        batch.id
+      )) as ProductionPlanImportRowResponse[];
+
+      return {
+        batch,
+        rows
+      };
     },
     async activateBatchById(
       id: string

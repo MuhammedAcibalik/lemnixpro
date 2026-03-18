@@ -25,6 +25,7 @@ import {
   ApiTags
 } from "@nestjs/swagger";
 
+import { ProductionPlanActiveBatchRowsResponseDto } from "./dto/production-plan-active-batch-rows-response.dto";
 import { ProductionPlanImportBatchDetailResponseDto } from "./dto/production-plan-import-batch-detail-response.dto";
 import { ProductionPlanImportBatchResponseDto } from "./dto/production-plan-import-batch-response.dto";
 import { ProductionPlanImportRowResponseDto } from "./dto/production-plan-import-row-response.dto";
@@ -128,6 +129,27 @@ export class ProductionPlanImportsController {
     @Param("id", new ParseUUIDPipe({ version: "4" })) id: string
   ): Promise<ProductionPlanImportBatchResponseDto> {
     return this.productionPlanImportsService.activateImport(id);
+  }
+
+  @Get("production-plan-weeks/:weekNumber/active-batch/rows")
+  @ApiOperation({
+    summary:
+      "Get the active production plan import batch and its normalized rows for one week."
+  })
+  @ApiOkResponse({ type: ProductionPlanActiveBatchRowsResponseDto })
+  @ApiBadRequestResponse({
+    description: "weekNumber must be a positive integer."
+  })
+  @ApiNotFoundResponse({
+    description: "No active production plan import batch exists for the requested week."
+  })
+  async findActiveBatchRowsByWeekNumber(
+    @Param("weekNumber", new ParseProductionPlanWeekNumberPipe())
+    weekNumber: number
+  ): Promise<ProductionPlanActiveBatchRowsResponseDto> {
+    return this.productionPlanImportsService.findActiveBatchRowsByWeekNumber(
+      weekNumber
+    );
   }
 
   @Get("production-plan-weeks/:weekNumber/active-batch")

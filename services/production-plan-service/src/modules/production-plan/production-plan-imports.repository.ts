@@ -87,6 +87,11 @@ export type UpdateProductionPlanRowResult = {
   row: ProductionPlanRow;
 };
 
+export type ActiveProductionPlanBatchRowsResult = {
+  batch: ProductionPlanImportBatch;
+  rows: ProductionPlanRow[];
+};
+
 @Injectable()
 export class ProductionPlanImportsRepository {
   private readonly databaseClient: ProductionPlanDatabase;
@@ -205,6 +210,23 @@ export class ProductionPlanImportsRepository {
       .limit(1);
 
     return batch ?? null;
+  }
+
+  async findActiveBatchRowsByWeekNumber(
+    weekNumber: number
+  ): Promise<ActiveProductionPlanBatchRowsResult | null> {
+    const batch = await this.findActiveBatchByWeekNumber(weekNumber);
+
+    if (!batch) {
+      return null;
+    }
+
+    const rows = await this.findRowsByBatchId(batch.id);
+
+    return {
+      batch,
+      rows
+    };
   }
 
   async activateBatchById(id: string): Promise<ProductionPlanImportBatch | null> {
