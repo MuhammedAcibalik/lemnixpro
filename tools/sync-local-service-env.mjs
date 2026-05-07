@@ -2,7 +2,7 @@
 /**
  * Repo kökündeki .env içinden Postgres/Rabbit değerlerini okuyup yerel servis .env dosyalarını günceller.
  *
- * Güncellenenler: master-data, production-plan, cut-list, api-gateway, optimization-orchestrator,
+ * Güncellenenler: facility, master-data, production-plan, cut-list, api-gateway, optimization-orchestrator,
  * result-service (tam yazım); engines/optimization-engine/.env (Rabbit + iç servis secret + result URL);
  * identity-service (merge): DATABASE_URL + INTERNAL_SERVICE_AUTH_SECRET.
  * Orchestrator/result/engine .env senkronize değilse kuyruk ilerlemez veya 401 oluşur.
@@ -156,6 +156,21 @@ function main() {
   const rootSecret = infra.INTERNAL_SERVICE_AUTH_SECRET?.trim();
 
   const services = [
+    {
+      rel: path.join("services", "facility-service", ".env"),
+      lines: ([secret]) =>
+        [
+          "# Bu dosya pnpm sync:service-env ile kök .env ile hizalanır.",
+          "SERVICE_NAME=facility-service",
+          "NODE_ENV=development",
+          "LOG_LEVEL=info",
+          "ENABLE_SWAGGER=true",
+          "PORT=3009",
+          `DATABASE_URL=${databaseUrl}`,
+          `INTERNAL_SERVICE_AUTH_SECRET=${secret}`,
+          ""
+        ].join("\n")
+    },
     {
       rel: path.join("services", "master-data-service", ".env"),
       lines: ([secret]) =>

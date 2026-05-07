@@ -3,6 +3,7 @@
 ## Planned Domains
 
 - Identity and access control
+- Facility catalog and facility-aware access control
 - Profile and master data management
 - Weekly production plan import from Excel
 - Weekly cut list management

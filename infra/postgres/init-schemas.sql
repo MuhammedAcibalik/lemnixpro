@@ -1,4 +1,5 @@
 CREATE SCHEMA IF NOT EXISTS identity;
+CREATE SCHEMA IF NOT EXISTS facility;
 CREATE SCHEMA IF NOT EXISTS master_data;
 CREATE SCHEMA IF NOT EXISTS production_plan;
 CREATE SCHEMA IF NOT EXISTS cut_list;
@@ -6,6 +7,7 @@ CREATE SCHEMA IF NOT EXISTS optimization;
 CREATE SCHEMA IF NOT EXISTS result;
 
 COMMENT ON SCHEMA identity IS 'Owned by identity-service migrations/runtime role.';
+COMMENT ON SCHEMA facility IS 'Owned by facility-service migrations/runtime role.';
 COMMENT ON SCHEMA master_data IS 'Owned by master-data-service migrations/runtime role.';
 COMMENT ON SCHEMA production_plan IS 'Owned by production-plan-service migrations/runtime role.';
 COMMENT ON SCHEMA cut_list IS 'Owned by cut-list-service migrations/runtime role.';

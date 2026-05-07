@@ -8,8 +8,13 @@ LemnixPRO uses service-owned persistence. Local development provisions a shared 
 
 - `api-gateway-service`
   - No schema and no database ownership
+- `facility-service`
+  - Owns the `facility` schema
 - `identity-service`
   - Owns the `identity` schema
+  - Owns `identity.users` and `identity.user_facility_grants`
+  - Stores facility IDs in grants as opaque cross-service references without
+    foreign keys to `facility-service`
 - `master-data-service`
   - Owns the `master_data` schema
 - `production-plan-service`

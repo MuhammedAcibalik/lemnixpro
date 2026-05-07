@@ -1,6 +1,9 @@
 import { randomUUID } from "node:crypto";
 
 import { Inject, Injectable } from "@nestjs/common";
+import { inArray } from "drizzle-orm";
+
+import type { UserRole } from "@lemnixpro/shared-types";
 
 import { DATABASE_CLIENT } from "../../infrastructure/db/database.tokens";
 import type { IdentityDatabase } from "../../infrastructure/db/client";
@@ -10,7 +13,7 @@ type CreateUserInput = {
   email: string;
   passwordHash: string;
   fullName: string;
-  role: "ADMIN" | "PLANNER" | "VIEWER";
+  role: UserRole;
   isActive: boolean;
 };
 
@@ -39,7 +42,7 @@ export class UsersRepository {
 
   async hasAdmin(): Promise<boolean> {
     const admin = await this.databaseClient.query.users.findFirst({
-      where: (table, { eq: equals }) => equals(table.role, "ADMIN")
+      where: (table) => inArray(table.role, ["SUPER_ADMIN", "ADMIN"])
     });
 
     return admin !== undefined;

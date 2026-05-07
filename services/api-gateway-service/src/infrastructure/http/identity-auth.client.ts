@@ -2,6 +2,8 @@ import { HttpException, Inject, Injectable, ServiceUnavailableException } from "
 
 import type {
   CurrentUserResponse,
+  FacilityAccessCheckRequest,
+  FacilityAccessCheckResponse,
   LoginRequest,
   LoginResponse
 } from "@lemnixpro/shared-contracts";
@@ -35,6 +37,23 @@ export class IdentityAuthClient {
         authorization: authorizationHeader
       }
     });
+  }
+
+  async resolveFacilityAccess(
+    authorizationHeader: string,
+    request: FacilityAccessCheckRequest
+  ): Promise<FacilityAccessCheckResponse> {
+    return this.request<FacilityAccessCheckResponse>(
+      "/auth/me/facility-access/resolve",
+      {
+        method: "POST",
+        headers: {
+          authorization: authorizationHeader,
+          "content-type": "application/json"
+        },
+        body: JSON.stringify(request)
+      }
+    );
   }
 
   /** İlk yerel admin; identity BOOTSTRAP_* + ALLOW_BOOTSTRAP_ADMIN gerekli. Üst kimlik gerektirmez. */

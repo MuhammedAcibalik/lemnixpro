@@ -15,6 +15,7 @@ This is the active architecture direction for LemnixPRO. Earlier modular-monolit
 ## Active Implemented Backend Slices
 
 - `identity-service`: identity and authentication boundary
+- `facility-service`: physical facility catalog boundary
 - `master-data-service`: main profile master data boundary
 - `production-plan-service`: weekly production plan import boundary
 - `cut-list-service`: cut list snapshot boundary

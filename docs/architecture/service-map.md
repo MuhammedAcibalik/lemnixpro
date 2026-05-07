@@ -10,12 +10,20 @@ This is the active runtime service map for the backend-first microservices monor
 - `services/api-gateway-service`
   - Browser-facing HTTP boundary
   - Routing, edge policy, and gateway-level API surface
+  - Active facility context parsing, identity-backed validation, and downstream
+    facility header propagation in compatibility mode
   - No database ownership
+- `services/facility-service`
+  - Physical factory / production plant catalog boundary
+  - Owns facility lifecycle records used by future facility-scoped access and data partitioning
 
 ## Active Implemented Backend Slices
 
+- `services/facility-service`
+  - Facility catalog boundary
 - `services/identity-service`
   - Identity and authentication boundary
+  - Owns user facility/module grants and facility context resolution decisions
 - `services/master-data-service`
   - Main profile master data boundary
 - `services/production-plan-service`

@@ -34,7 +34,9 @@ export type ApiErrorResponse = {
 export const requestHeaders = {
   requestId: "x-request-id",
   correlationId: "x-correlation-id",
-  internalServiceToken: "x-lemnixpro-internal-token"
+  internalServiceToken: "x-lemnixpro-internal-token",
+  facilityId: "x-lemnixpro-facility-id",
+  facilityScope: "x-lemnixpro-facility-scope"
 } as const;
 
 export type RequestContextMetadata = {
@@ -82,6 +84,129 @@ export type LoginResponse = {
 
 export type CurrentUserResponse = {
   user: AuthenticatedUser;
+};
+
+export const facilityStatuses = ["active", "inactive"] as const;
+
+export type FacilityStatus = (typeof facilityStatuses)[number];
+
+export type Facility = {
+  id: EntityId;
+  code: string;
+  name: string;
+  status: FacilityStatus;
+  createdAt: UtcTimestamp;
+  updatedAt: UtcTimestamp;
+};
+
+export type FacilitySummary = Pick<
+  Facility,
+  "id" | "code" | "name" | "status"
+>;
+
+export type CreateFacilityRequest = {
+  code: string;
+  name: string;
+  status?: FacilityStatus;
+};
+
+export type UpdateFacilityRequest = Partial<CreateFacilityRequest>;
+
+export const facilityModuleKeys = [
+  "workspace",
+  "master-data",
+  "production-plan",
+  "cut-list",
+  "optimization",
+  "results",
+  "analytics",
+  "two-d-nesting"
+] as const;
+
+export type FacilityModuleKey = (typeof facilityModuleKeys)[number];
+
+export const facilityScopes = ["single", "all"] as const;
+
+export type FacilityScope = (typeof facilityScopes)[number];
+
+export const facilityAccessRoles = [
+  "SUPER_ADMIN",
+  "CENTRAL_PLANNER",
+  "FACILITY_ADMIN",
+  "FACILITY_PLANNER",
+  "FACILITY_OPERATOR",
+  "FACILITY_VIEWER"
+] as const;
+
+export type FacilityAccessRole = (typeof facilityAccessRoles)[number];
+
+export type UserFacilityGrant = {
+  userId: EntityId;
+  facilityId: EntityId;
+  facilityRole: FacilityAccessRole;
+  moduleKeys: FacilityModuleKey[];
+  isDefault: boolean;
+  createdAt: UtcTimestamp;
+  updatedAt: UtcTimestamp;
+};
+
+export type UserFacilityGrantInput = {
+  facilityId: EntityId;
+  facilityRole: FacilityAccessRole;
+  moduleKeys: FacilityModuleKey[];
+  isDefault?: boolean;
+};
+
+export type SetUserFacilityGrantsRequest = {
+  grants: UserFacilityGrantInput[];
+};
+
+export type UserFacilityAccess = {
+  userId: EntityId;
+  grants: UserFacilityGrant[];
+};
+
+export type UserFacilityAccessResponse = UserFacilityAccess & {
+  effectiveRole: UserRole;
+  canUseAllFacilities: boolean;
+  defaultFacilityId: EntityId | null;
+};
+
+export type ActiveFacilityContext =
+  | {
+      scope: "single";
+      facilityId: EntityId;
+    }
+  | {
+      scope: "all";
+      facilityId: null;
+    };
+
+export const facilityAccessDecisionReasons = [
+  "super_admin",
+  "facility_module_granted",
+  "central_planner_module_granted",
+  "facility_not_granted",
+  "module_not_granted",
+  "all_scope_not_granted",
+  "invalid_facility_context",
+  "user_not_found"
+] as const;
+
+export type FacilityAccessDecisionReason =
+  (typeof facilityAccessDecisionReasons)[number];
+
+export type FacilityAccessCheckRequest = {
+  scope: FacilityScope;
+  facilityId?: EntityId | null;
+  moduleKey?: FacilityModuleKey;
+};
+
+export type FacilityAccessCheckResponse = {
+  userId: EntityId;
+  allowed: boolean;
+  reason: FacilityAccessDecisionReason;
+  context: ActiveFacilityContext | null;
 };
 
 export type CreateMainProfileRequest = {

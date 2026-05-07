@@ -6,6 +6,7 @@ import path from "node:path";
 import { CommonModule } from "./common/common.module";
 import { validateEnv } from "./config/env";
 import { HealthModule } from "./health/health.module";
+import { FacilityContextModule } from "./infrastructure/facility-context/facility-context.module";
 import { GatewayModule } from "./modules/auth/gateway.module";
 import { CutListsModule } from "./modules/cut-lists/cut-lists.module";
 import { MainProfilesModule } from "./modules/main-profiles/main-profiles.module";
@@ -36,6 +37,7 @@ import { WorkspaceModule } from "./modules/workspace/workspace.module";
     ]),
     CommonModule,
     HealthModule,
+    FacilityContextModule,
     GatewayModule,
     CutListsModule,
     MainProfilesModule,

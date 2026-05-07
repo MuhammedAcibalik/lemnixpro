@@ -29,6 +29,7 @@ Earlier monolith-oriented recommendations are superseded and kept only as histor
 The currently implemented backend slices are:
 
 - `identity/auth`
+- `facility catalog`
 - `main profile master data`
 - `weekly production plan import`
 - `cut list snapshot management`
@@ -72,4 +73,3 @@ The Python optimization engine currently consumes optimization requests and emit
 - Browser-facing backend traffic should terminate at `api-gateway-service`.
 - Internal synchronous communication uses explicit HTTP APIs, and long-running optimization workflows use RabbitMQ.
 - The Python optimization engine is a separate runtime and is not part of the `pnpm` workspace.
-

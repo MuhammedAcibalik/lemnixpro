@@ -17,6 +17,9 @@ LemnixPRO uses explicit service-to-service integration. Domain services do not c
 - Service URLs and credentials are configured through environment variables owned by the caller.
 - HTTP callers propagate `x-request-id` and `x-correlation-id` so logs can be joined across web, gateway, and domain services.
 - Internal service calls include `x-lemnixpro-internal-token`; production services reject non-health traffic without it.
+- Facility-aware calls propagate `x-lemnixpro-facility-id` and `x-lemnixpro-facility-scope` after the gateway validates the active facility context through `identity-service`.
+- During compatibility mode, existing routes that do not send facility headers continue through the gateway unchanged; downstream hard enforcement is introduced service by service.
+- `x-lemnixpro-facility-scope=all` is reserved for privileged read/reporting flows; write/import operations must resolve to one concrete facility.
 
 ## Asynchronous Communication
 

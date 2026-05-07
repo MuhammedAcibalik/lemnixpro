@@ -90,6 +90,12 @@ export class GatewayOptimizationConfigDto implements OptimizationConfig {
 
   @ApiProperty({ required: false, nullable: true })
   @IsOptional()
+  @IsInt()
+  @Min(1)
+  maxPiecesPerStockBar!: number | null;
+
+  @ApiProperty({ required: false, nullable: true })
+  @IsOptional()
   @IsNumber()
   @Min(0)
   @Max(100)

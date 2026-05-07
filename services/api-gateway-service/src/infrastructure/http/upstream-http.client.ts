@@ -10,6 +10,8 @@ import { ConfigService } from "@nestjs/config";
 import { requestHeaders } from "@lemnixpro/shared-contracts";
 import { createRequestId, getRequestContext } from "@lemnixpro/shared-utils";
 
+import { getGatewayFacilityContext } from "../facility-context/gateway-facility-context.storage";
+
 function extractNestStyleMessage(candidate: Record<string, unknown>): string | undefined {
   const message = candidate.message;
 
@@ -73,6 +75,8 @@ export class UpstreamHttpClient {
     if (internalServiceAuthSecret) {
       headers.set(requestHeaders.internalServiceToken, internalServiceAuthSecret);
     }
+
+    this.applyFacilityContextHeaders(headers);
 
     let response: Response;
 
@@ -224,6 +228,23 @@ export class UpstreamHttpClient {
 
   private shouldRetry(method: string, status: number): boolean {
     return method === "GET" && (status === 502 || status === 503 || status === 504);
+  }
+
+  private applyFacilityContextHeaders(headers: Headers): void {
+    const facilityContext = getGatewayFacilityContext();
+
+    if (!facilityContext) {
+      return;
+    }
+
+    headers.set(requestHeaders.facilityScope, facilityContext.scope);
+
+    if (facilityContext.scope === "single") {
+      headers.set(requestHeaders.facilityId, facilityContext.facilityId);
+      return;
+    }
+
+    headers.delete(requestHeaders.facilityId);
   }
 
   private isFormDataBody(body: RequestInit["body"]): boolean {

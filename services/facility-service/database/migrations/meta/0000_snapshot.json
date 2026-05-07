@@ -1,0 +1,127 @@
+{
+  "id": "a225d995-4ca0-400b-9ada-a2a228b9ff4a",
+  "prevId": "00000000-0000-0000-0000-000000000000",
+  "version": "7",
+  "dialect": "postgresql",
+  "tables": {
+    "facility.facilities": {
+      "name": "facilities",
+      "schema": "facility",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "code": {
+          "name": "code",
+          "type": "varchar(64)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "name": {
+          "name": "name",
+          "type": "varchar(200)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "status": {
+          "name": "status",
+          "type": "facility_status",
+          "typeSchema": "facility",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'active'"
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "facility_facilities_code_unique": {
+          "name": "facility_facilities_code_unique",
+          "columns": [
+            {
+              "expression": "code",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "facility_facilities_status_idx": {
+          "name": "facility_facilities_status_idx",
+          "columns": [
+            {
+              "expression": "status",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "facility_facilities_code_not_blank": {
+          "name": "facility_facilities_code_not_blank",
+          "value": "length(trim(\"facility\".\"facilities\".\"code\")) > 0"
+        },
+        "facility_facilities_code_uppercase": {
+          "name": "facility_facilities_code_uppercase",
+          "value": "\"facility\".\"facilities\".\"code\" = upper(\"facility\".\"facilities\".\"code\")"
+        },
+        "facility_facilities_name_not_blank": {
+          "name": "facility_facilities_name_not_blank",
+          "value": "length(trim(\"facility\".\"facilities\".\"name\")) > 0"
+        }
+      },
+      "isRLSEnabled": false
+    }
+  },
+  "enums": {
+    "facility.facility_status": {
+      "name": "facility_status",
+      "schema": "facility",
+      "values": [
+        "active",
+        "inactive"
+      ]
+    }
+  },
+  "schemas": {
+    "facility": "facility"
+  },
+  "sequences": {},
+  "roles": {},
+  "policies": {},
+  "views": {},
+  "_meta": {
+    "columns": {},
+    "schemas": {},
+    "tables": {}
+  }
+}
