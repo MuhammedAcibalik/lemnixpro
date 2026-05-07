@@ -1,8 +1,11 @@
 import { ApiProperty, ApiPropertyOptional } from "@nestjs/swagger";
 
 import type {
+  OptimizationDryRunActiveBatchSummary,
   OptimizationDemandRow,
   OptimizationMainProfileInput,
+  OptimizationDryRunResponse,
+  OptimizationPreparationUnmatchedRow,
   OptimizationRequestPayload
 } from "@lemnixpro/shared-contracts";
 
@@ -10,67 +13,70 @@ export const optimizationPreparationUnmatchedReasonCodes = [
   "production_row_invalid",
   "missing_material_code",
   "missing_active_main_profile",
-  "ambiguous_active_main_profile"
+  "ambiguous_active_main_profile",
+  "main_profile_code_unmatched"
 ] as const;
 
 export type OptimizationPreparationUnmatchedReasonCode =
   (typeof optimizationPreparationUnmatchedReasonCodes)[number];
 
-export class OptimizationDryRunActiveBatchSummaryDto {
-  @ApiProperty()
+export class OptimizationDryRunActiveBatchSummaryDto
+  implements OptimizationDryRunActiveBatchSummary
+{
+  @ApiProperty({ type: String })
   id!: string;
 
-  @ApiProperty()
+  @ApiProperty({ type: String })
   fileName!: string;
 
-  @ApiProperty()
+  @ApiProperty({ type: String })
   sheetName!: string;
 
-  @ApiProperty()
+  @ApiPropertyOptional({ type: Number, nullable: true })
+  planYear!: number | null;
+
+  @ApiProperty({ type: Number })
   weekNumber!: number;
 
-  @ApiProperty()
+  @ApiProperty({ type: String, enum: ["active"] })
   status!: "active";
 
-  @ApiProperty()
+  @ApiProperty({ type: Number })
   totalRowCount!: number;
 
-  @ApiProperty()
+  @ApiProperty({ type: Number })
   validRowCount!: number;
 
-  @ApiProperty()
+  @ApiProperty({ type: Number })
   invalidRowCount!: number;
 
-  @ApiPropertyOptional({
-    nullable: true
-  })
+  @ApiPropertyOptional({ type: String, nullable: true })
   activatedAt!: string | null;
 
-  @ApiProperty()
+  @ApiProperty({ type: String })
   createdAt!: string;
 
-  @ApiProperty()
+  @ApiProperty({ type: String })
   updatedAt!: string;
 }
 
-export class OptimizationPreparationUnmatchedRowDto {
-  @ApiProperty()
+export class OptimizationPreparationUnmatchedRowDto
+  implements OptimizationPreparationUnmatchedRow
+{
+  @ApiProperty({ type: String })
   rowId!: string;
 
-  @ApiProperty()
+  @ApiProperty({ type: Number })
   rowIndex!: number;
 
-  @ApiPropertyOptional({
-    nullable: true
-  })
+  @ApiPropertyOptional({ type: String, nullable: true })
   materialCode!: string | null;
 
-  @ApiPropertyOptional({
-    nullable: true
-  })
+  @ApiPropertyOptional({ type: String, nullable: true })
   workOrderNumber!: string | null;
 
   @ApiProperty({
+    type: String,
     enum: optimizationPreparationUnmatchedReasonCodes,
     isArray: true
   })
@@ -85,98 +91,80 @@ export class OptimizationPreparationUnmatchedRowDto {
 export class OptimizationMainProfileInputDto
   implements OptimizationMainProfileInput
 {
-  @ApiProperty()
+  @ApiProperty({ type: String })
   id!: string;
 
-  @ApiProperty()
+  @ApiProperty({ type: String })
   code!: string;
 
-  @ApiProperty()
+  @ApiProperty({ type: String })
   name!: string;
 
-  @ApiProperty()
+  @ApiProperty({ type: String })
   linkedProductCode!: string;
 
-  @ApiProperty()
+  @ApiProperty({ type: String })
   linkedProductName!: string;
 
-  @ApiProperty()
+  @ApiProperty({ type: Number })
   stockLengthMm!: number;
 }
 
 export class OptimizationDemandRowDto implements OptimizationDemandRow {
-  @ApiProperty()
+  @ApiProperty({ type: String })
   productionRowId!: string;
 
-  @ApiProperty()
+  @ApiProperty({ type: Number })
   rowIndex!: number;
 
-  @ApiProperty()
+  @ApiProperty({ type: String })
   mainProfileId!: string;
 
-  @ApiProperty()
+  @ApiProperty({ type: String })
   mainProfileCode!: string;
 
-  @ApiPropertyOptional({
-    nullable: true
-  })
+  @ApiPropertyOptional({ type: String, nullable: true })
   customerName!: string | null;
 
-  @ApiPropertyOptional({
-    nullable: true
-  })
+  @ApiPropertyOptional({ type: String, nullable: true })
   orderingPartyCode!: string | null;
 
-  @ApiPropertyOptional({
-    nullable: true
-  })
+  @ApiPropertyOptional({ type: String, nullable: true })
   customerOrderNumber!: string | null;
 
-  @ApiPropertyOptional({
-    nullable: true
-  })
+  @ApiPropertyOptional({ type: String, nullable: true })
   customerOrderItemNumber!: string | null;
 
-  @ApiPropertyOptional({
-    nullable: true
-  })
+  @ApiPropertyOptional({ type: String, nullable: true })
   workOrderNumber!: string | null;
 
-  @ApiProperty()
+  @ApiProperty({ type: String })
   materialCode!: string;
 
-  @ApiPropertyOptional({
-    nullable: true
-  })
+  @ApiPropertyOptional({ type: String, nullable: true })
   materialName!: string | null;
 
-  @ApiProperty()
+  @ApiProperty({ type: Number })
   quantity!: number;
 
-  @ApiProperty()
+  @ApiProperty({ type: String })
   orderUnit!: string;
 
-  @ApiPropertyOptional({
-    nullable: true
-  })
+  @ApiPropertyOptional({ type: String, nullable: true })
   plannedFinishDate!: string | null;
 
-  @ApiPropertyOptional({
-    nullable: true
-  })
+  @ApiPropertyOptional({ type: String, nullable: true })
   departmentCode!: string | null;
 
-  @ApiPropertyOptional({
-    nullable: true
-  })
+  @ApiPropertyOptional({ type: String, nullable: true })
   priority!: string | null;
 }
 
 export class OptimizationRequestPayloadDto implements OptimizationRequestPayload {
-  @ApiProperty()
+  @ApiProperty({ type: Number })
   weekNumber!: number;
 
-  @ApiProperty()
+  @ApiProperty({ type: String })
   sourceBatchId!: string;
 
   @ApiProperty({
@@ -191,10 +179,10 @@ export class OptimizationRequestPayloadDto implements OptimizationRequestPayload
 }
 
 export class OptimizationUnmatchedSummaryDto {
-  @ApiProperty()
+  @ApiProperty({ type: Number })
   totalUnmatchedRows!: number;
 
-  @ApiProperty()
+  @ApiProperty({ type: Number })
   rowsMissingMasterDataLinkage!: number;
 
   @ApiProperty({
@@ -203,8 +191,8 @@ export class OptimizationUnmatchedSummaryDto {
   unmatchedReasons!: OptimizationPreparationUnmatchedRowDto[];
 }
 
-export class OptimizationDryRunResponseDto {
-  @ApiProperty()
+export class OptimizationDryRunResponseDto implements OptimizationDryRunResponse {
+  @ApiProperty({ type: Number })
   weekNumber!: number;
 
   @ApiProperty({
@@ -212,19 +200,19 @@ export class OptimizationDryRunResponseDto {
   })
   activeBatch!: OptimizationDryRunActiveBatchSummaryDto;
 
-  @ApiProperty()
+  @ApiProperty({ type: Number })
   totalProductionRows!: number;
 
-  @ApiProperty()
+  @ApiProperty({ type: Number })
   masterDataCountUsed!: number;
 
-  @ApiProperty()
+  @ApiProperty({ type: Number })
   matchedRows!: number;
 
-  @ApiProperty()
+  @ApiProperty({ type: Number })
   unmatchedRows!: number;
 
-  @ApiProperty()
+  @ApiProperty({ type: Number })
   rowsMissingMasterDataLinkage!: number;
 
   @ApiProperty({

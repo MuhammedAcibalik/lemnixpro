@@ -10,7 +10,12 @@ import {
   validateSync
 } from "class-validator";
 
-import { asBoolean, asNumber } from "@lemnixpro/shared-utils";
+import {
+  asBoolean,
+  asNumber,
+  assertProductionSafeSecret,
+  assertProductionSafeUrl
+} from "@lemnixpro/shared-utils";
 
 class EnvironmentVariables {
   @IsString()
@@ -22,6 +27,9 @@ class EnvironmentVariables {
   @IsString()
   LOG_LEVEL = "info";
 
+  @IsBoolean()
+  ENABLE_SWAGGER = true;
+
   @IsInt()
   @Min(1)
   @Max(65535)
@@ -32,6 +40,9 @@ class EnvironmentVariables {
 
   @IsString()
   JWT_SECRET = "replace-with-a-long-random-secret";
+
+  @IsString()
+  INTERNAL_SERVICE_AUTH_SECRET = "";
 
   @IsString()
   JWT_ISSUER = "lemnixpro";
@@ -75,8 +86,16 @@ class EnvironmentVariables {
 }
 
 export function validateEnv(config: Record<string, unknown>): EnvironmentVariables {
+  const environment =
+    typeof config.NODE_ENV === "string" ? config.NODE_ENV : "development";
   const validatedConfig = plainToInstance(EnvironmentVariables, {
     ...config,
+    ENABLE_SWAGGER: asBoolean(
+      typeof config.ENABLE_SWAGGER === "string"
+        ? config.ENABLE_SWAGGER
+        : undefined,
+      environment !== "production"
+    ),
     PORT: asNumber(
       typeof config.PORT === "string" ? config.PORT : undefined,
       3002
@@ -96,6 +115,24 @@ export function validateEnv(config: Record<string, unknown>): EnvironmentVariabl
   if (errors.length > 0) {
     throw new Error(errors.toString());
   }
+
+  assertProductionSafeSecret({
+    environment: validatedConfig.NODE_ENV,
+    name: "JWT_SECRET",
+    value: validatedConfig.JWT_SECRET,
+    forbiddenValues: ["replace-with-a-long-random-secret"]
+  });
+  assertProductionSafeSecret({
+    environment: validatedConfig.NODE_ENV,
+    name: "INTERNAL_SERVICE_AUTH_SECRET",
+    value: validatedConfig.INTERNAL_SERVICE_AUTH_SECRET
+  });
+  assertProductionSafeUrl({
+    environment: validatedConfig.NODE_ENV,
+    name: "DATABASE_URL",
+    value: validatedConfig.DATABASE_URL,
+    forbiddenSubstrings: ["postgres:postgres@", "localhost", "127.0.0.1"]
+  });
 
   return validatedConfig;
 }

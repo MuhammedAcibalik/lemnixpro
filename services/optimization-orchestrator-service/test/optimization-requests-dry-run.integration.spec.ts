@@ -398,7 +398,7 @@ describe("optimization-orchestrator-service dry-run endpoint", () => {
         workOrderNumber: "WO-004",
         reasons: ["ambiguous_active_main_profile"],
         details: [
-          'Multiple active main profiles share linkedProductCode "PRD-200": MP-002, MP-003.'
+          'Bu ana ürün ("PRD-200") için birden fazla aktif ana profil tanımlı (MP-002, MP-003). Üretim planı satırına hangi profilin kullanılacağını seçmek için "profil kodu" alanını doldurun.'
         ]
       }
     ]);

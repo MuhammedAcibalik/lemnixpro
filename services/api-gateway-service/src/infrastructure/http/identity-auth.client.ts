@@ -7,10 +7,13 @@ import type {
 } from "@lemnixpro/shared-contracts";
 
 import { UpstreamService } from "./upstream.service";
+import { UpstreamHttpClient } from "./upstream-http.client";
 
 @Injectable()
 export class IdentityAuthClient {
   constructor(
+    @Inject(UpstreamHttpClient)
+    private readonly upstreamHttpClient: UpstreamHttpClient,
     @Inject(UpstreamService)
     private readonly upstreamService: UpstreamService
   ) {}
@@ -34,52 +37,30 @@ export class IdentityAuthClient {
     });
   }
 
+  /** İlk yerel admin; identity BOOTSTRAP_* + ALLOW_BOOTSTRAP_ADMIN gerekli. Üst kimlik gerektirmez. */
+  async bootstrapAdmin(providedSecret?: string): Promise<CurrentUserResponse> {
+    return this.request<CurrentUserResponse>("/auth/bootstrap-admin", {
+      method: "POST",
+      headers: providedSecret ? { "x-bootstrap-secret": providedSecret } : {}
+    });
+  }
+
   private async request<T>(path: string, init: RequestInit): Promise<T> {
-    const baseUrl = this.upstreamService.getIdentityServiceBaseUrl();
-    const headers = new Headers(init.headers);
-    headers.set("accept", "application/json");
-
-    let response: Response;
-
     try {
-      response = await fetch(`${baseUrl}${path}`, {
-        ...init,
-        headers
-      });
-    } catch {
+      return await this.upstreamHttpClient.request<T>(
+        this.upstreamService.getIdentityServiceBaseUrl(),
+        path,
+        init
+      );
+    } catch (error) {
+      if (
+        error instanceof ServiceUnavailableException ||
+        error instanceof HttpException
+      ) {
+        throw error;
+      }
+
       throw new ServiceUnavailableException("Identity service is unavailable.");
     }
-
-    const payload = await this.parsePayload(response);
-
-    if (!response.ok) {
-      throw new HttpException(
-        this.normalizeErrorPayload(payload),
-        response.status
-      );
-    }
-
-    return payload as T;
-  }
-
-  private async parsePayload(response: Response): Promise<unknown> {
-    const contentType = response.headers.get("content-type") ?? "";
-
-    if (contentType.includes("application/json")) {
-      return response.json();
-    }
-
-    const text = await response.text();
-    return text ? { message: text } : { message: response.statusText };
-  }
-
-  private normalizeErrorPayload(payload: unknown): object {
-    if (payload && typeof payload === "object") {
-      return payload;
-    }
-
-    return {
-      message: "Identity service request failed."
-    };
   }
 }

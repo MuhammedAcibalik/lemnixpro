@@ -6,6 +6,9 @@
     "rootDir": "src",
     "outDir": "dist",
     "declaration": true,
+    "types": [
+      "node"
+    ],
     "baseUrl": ".",
     "paths": {
       "@/*": [

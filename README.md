@@ -31,12 +31,15 @@ The currently implemented backend slices are:
 - `identity/auth`
 - `main profile master data`
 - `weekly production plan import`
+- `cut list snapshot management`
+- `optimization request orchestration`
+- `optimization result ingestion`
 
-Cut list management, optimization orchestration, optimization results, and the full optimization engine integration remain planned architecture slices and should not be treated as completed product scope yet.
+The Python optimization engine currently consumes optimization requests and emits scaffolded completed/failed result events. The OR-Tools model itself remains an evolving product slice.
 
 ## Local Prerequisites
 
-- Node.js `22.x`
+- Node.js `22.x` or `24.x`
 - `pnpm` `10.6.2`
 - Python `3.12`
 - Docker with Compose v2

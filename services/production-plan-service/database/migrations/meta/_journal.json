@@ -15,6 +15,48 @@
       "when": 1773816011093,
       "tag": "0001_fair_surge",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1773816012000,
+      "tag": "0002_material_derivatives",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1773816013000,
+      "tag": "0003_material_name_text",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1774820000000,
+      "tag": "0004_main_profile_code",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1774820001000,
+      "tag": "0005_plan_year_active_scope",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1774820002000,
+      "tag": "0006_activation_outbox",
+      "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1777850200000,
+      "tag": "0007_row_lookup_indexes",
+      "breakpoints": true
     }
   ]
 }

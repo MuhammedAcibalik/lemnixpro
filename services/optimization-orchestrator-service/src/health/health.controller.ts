@@ -1,4 +1,4 @@
-import { Controller, Get } from "@nestjs/common";
+import { Controller, Get, Inject } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import { ApiTags } from "@nestjs/swagger";
 
@@ -8,7 +8,10 @@ import { isoNow } from "@lemnixpro/shared-utils";
 @ApiTags("health")
 @Controller("health")
 export class HealthController {
-  constructor(private readonly configService: ConfigService) {}
+  constructor(
+    @Inject(ConfigService)
+    private readonly configService: ConfigService
+  ) {}
 
   @Get("live")
   getLiveness(): HealthResponse {

@@ -1,0 +1,14 @@
+{
+  "_comment": "Ekran görüntüsü referans kesim özeti ile twin diff — Lemnix snapshot piece_classes özeti ile birebir eşlenecek multiset.",
+  "materialColorClass": "anodized",
+  "stockBarLengthMm": 6100,
+  "piecesMmQty": [
+    { "pieceLengthMm": 876, "quantity": 20 },
+    { "pieceLengthMm": 629, "quantity": 60 },
+    { "pieceLengthMm": 455, "quantity": 40 },
+    { "pieceLengthMm": 332, "quantity": 191 },
+    { "pieceLengthMm": 245, "quantity": 73 }
+  ],
+  "referencePhysicalCutsSigmaUsage": 32,
+  "referenceDistinctTemplates": 4
+}

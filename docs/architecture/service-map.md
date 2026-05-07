@@ -20,18 +20,19 @@ This is the active runtime service map for the backend-first microservices monor
   - Main profile master data boundary
 - `services/production-plan-service`
   - Weekly production plan import boundary
-
-## Planned or Reserved Service Ownership
-
 - `services/cut-list-service`
-  - Cut list management boundary
+  - Cut list snapshot management boundary
 - `services/optimization-orchestrator-service`
-  - Optimization request orchestration and async workflow boundary
+  - Optimization request orchestration and async queue handoff boundary
 - `services/result-service`
-  - Optimization output persistence and retrieval boundary
+  - Optimization completed/failed event ingestion and result retrieval boundary
+
+## Evolving Execution Ownership
+
 - `engines/optimization-engine`
   - Separate Python FastAPI service
-  - Owns Google OR-Tools-based optimization execution
+  - Consumes optimization requests and emits result events
+  - Owns Google OR-Tools-based optimization execution as the model matures
 
 ## Shared Node Workspace Packages
 

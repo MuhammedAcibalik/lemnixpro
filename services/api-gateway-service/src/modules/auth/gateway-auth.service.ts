@@ -25,6 +25,10 @@ export class GatewayAuthService {
     return this.identityAuthClient.login(request);
   }
 
+  async bootstrapAdmin(providedSecret?: string): Promise<CurrentUserResponse> {
+    return this.identityAuthClient.bootstrapAdmin(providedSecret);
+  }
+
   async getCurrentUser(authorizationHeader?: string): Promise<CurrentUserResponse> {
     return this.identityAuthClient.getCurrentUser(
       this.requireAuthorizationHeader(authorizationHeader)

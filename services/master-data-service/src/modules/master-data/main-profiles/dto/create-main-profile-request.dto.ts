@@ -2,13 +2,21 @@ import { ApiProperty, ApiPropertyOptional } from "@nestjs/swagger";
 import { Transform, Type } from "class-transformer";
 import {
   IsBoolean,
+  IsArray,
   IsInt,
+  IsNumber,
   IsOptional,
   IsString,
   MaxLength,
   Min,
-  MinLength
+  MinLength,
+  ValidateNested
 } from "class-validator";
+
+import type {
+  CreateMainProfileRequest,
+  MainProfileCuttingSpecInput
+} from "@lemnixpro/shared-contracts";
 
 function normalizeTrimmedString(value: unknown): unknown {
   return typeof value === "string" ? value.trim() : value;
@@ -32,7 +40,44 @@ function normalizeOptionalNotes(value: unknown): unknown {
   return normalizedValue;
 }
 
-export class CreateMainProfileRequestDto {
+export class MainProfileCuttingSpecInputDto
+  implements MainProfileCuttingSpecInput
+{
+  @ApiProperty({ example: "KS-001" })
+  @Transform(({ value }) => normalizeCode(value))
+  @IsString()
+  @MinLength(1)
+  @MaxLength(100)
+  cuttingCode!: string;
+
+  @ApiProperty({ example: "Alt kayıt düz kesim" })
+  @Transform(({ value }) => normalizeTrimmedString(value))
+  @IsString()
+  @MinLength(1)
+  @MaxLength(200)
+  cuttingName!: string;
+
+  @ApiProperty({ example: 1240 })
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  cuttingLengthMm!: number;
+
+  @ApiProperty({ example: 2 })
+  @Type(() => Number)
+  @IsNumber()
+  @Min(0.001)
+  unitQuantity!: number;
+
+  @ApiProperty({ example: "Adet" })
+  @Transform(({ value }) => normalizeTrimmedString(value))
+  @IsString()
+  @MinLength(1)
+  @MaxLength(50)
+  unitName!: string;
+}
+
+export class CreateMainProfileRequestDto implements CreateMainProfileRequest {
   @ApiProperty({
     example: "MP-001"
   })
@@ -85,6 +130,16 @@ export class CreateMainProfileRequestDto {
   @IsOptional()
   @IsBoolean()
   isActive?: boolean;
+
+  @ApiPropertyOptional({
+    isArray: true,
+    type: MainProfileCuttingSpecInputDto
+  })
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => MainProfileCuttingSpecInputDto)
+  cuttingSpecs?: MainProfileCuttingSpecInputDto[];
 
   @ApiPropertyOptional({
     example: "Preferred supplier lot for standard stock."

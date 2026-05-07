@@ -1,38 +1,68 @@
 import { ApiProperty } from "@nestjs/swagger";
 
-export class MainProfileResponseDto {
-  @ApiProperty()
+import type {
+  MainProfile,
+  MainProfileCuttingSpec
+} from "@lemnixpro/shared-contracts";
+
+class MainProfileCuttingSpecResponseDto implements MainProfileCuttingSpec {
+  @ApiProperty({ type: String })
   id!: string;
 
-  @ApiProperty()
+  @ApiProperty({ type: String })
+  cuttingCode!: string;
+
+  @ApiProperty({ type: String })
+  cuttingName!: string;
+
+  @ApiProperty({ type: Number })
+  cuttingLengthMm!: number;
+
+  @ApiProperty({ type: Number })
+  unitQuantity!: number;
+
+  @ApiProperty({ type: String })
+  unitName!: string;
+}
+
+export class MainProfileResponseDto implements MainProfile {
+  @ApiProperty({ type: String })
+  id!: string;
+
+  @ApiProperty({ type: String })
   code!: string;
 
-  @ApiProperty()
+  @ApiProperty({ type: String })
   name!: string;
 
   @ApiProperty({
-    example: 6500
+    example: 6500,
+    type: Number
   })
   stockLengthMm!: number;
 
-  @ApiProperty()
+  @ApiProperty({ type: String })
   linkedProductCode!: string;
 
-  @ApiProperty()
+  @ApiProperty({ type: String })
   linkedProductName!: string;
 
-  @ApiProperty()
+  @ApiProperty({ isArray: true, type: MainProfileCuttingSpecResponseDto })
+  cuttingSpecs!: MainProfileCuttingSpec[];
+
+  @ApiProperty({ type: Boolean })
   isActive!: boolean;
 
   @ApiProperty({
     nullable: true,
-    required: false
+    required: false,
+    type: String
   })
   notes!: string | null;
 
-  @ApiProperty()
+  @ApiProperty({ type: String })
   createdAt!: string;
 
-  @ApiProperty()
+  @ApiProperty({ type: String })
   updatedAt!: string;
 }

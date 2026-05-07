@@ -1,0 +1,130 @@
+{
+  "cutListSnapshotId": "snap-r28real",
+  "planYear": 2026,
+  "weekNumber": 19,
+  "selectedWorkOrderNumbers": "ALL",
+  "overrides": [],
+  "config": {
+    "kerfMm": 4,
+    "minReusableScrapMm": 200,
+    "allowMixingStockBars": true,
+    "solverTimeLimitSec": 120,
+    "randomSeed": 1,
+    "minProfileEfficiencyPct": null,
+    "patternConsolidationEnabled": true,
+    "maxDistinctPatternsPerProfile": 5,
+    "patternQualityToleranceMm": 0,
+    "maxStockLengthVarietyPerProfile": 1,
+    "preferReusableScrap": true,
+    "allowPostRepackPatternIncrease": false
+  },
+  "profileGroups": [
+    {
+      "mainProfileId": "MP-R28REAL",
+      "mainProfileCode": "MAIN-28REAL",
+      "mainProfileName": "Regression 28-pattern profile",
+      "materialColorClass": "anodized",
+      "stockBars": [
+        {
+          "lengthMm": 6200,
+          "role": "primary"
+        }
+      ],
+      "demandItemCount": 5,
+      "totalPieceLengthMm": 943344
+    }
+  ],
+  "demandItems": [
+    {
+      "productionRowId": "r0",
+      "rowIndex": 0,
+      "workOrderNumber": "WO-X",
+      "mainProfileId": "MP-R28REAL",
+      "mainProfileCode": "MAIN-28REAL",
+      "mainProfileName": "Regression 28-pattern profile",
+      "materialCode": "M",
+      "materialName": null,
+      "materialColor": "ELS",
+      "materialColorClass": "anodized",
+      "cuttingCode": "C1048",
+      "cuttingName": "1048",
+      "pieceLengthMm": 1048,
+      "quantity": 360
+    },
+    {
+      "productionRowId": "r1",
+      "rowIndex": 1,
+      "workOrderNumber": "WO-X",
+      "mainProfileId": "MP-R28REAL",
+      "mainProfileCode": "MAIN-28REAL",
+      "mainProfileName": "Regression 28-pattern profile",
+      "materialCode": "M",
+      "materialName": null,
+      "materialColor": "ELS",
+      "materialColorClass": "anodized",
+      "cuttingCode": "C898",
+      "cuttingName": "898",
+      "pieceLengthMm": 898,
+      "quantity": 288
+    },
+    {
+      "productionRowId": "r2",
+      "rowIndex": 2,
+      "workOrderNumber": "WO-X",
+      "mainProfileId": "MP-R28REAL",
+      "mainProfileCode": "MAIN-28REAL",
+      "mainProfileName": "Regression 28-pattern profile",
+      "materialCode": "M",
+      "materialName": null,
+      "materialColor": "ELS",
+      "materialColorClass": "anodized",
+      "cuttingCode": "C720",
+      "cuttingName": "720",
+      "pieceLengthMm": 720,
+      "quantity": 216
+    },
+    {
+      "productionRowId": "r3",
+      "rowIndex": 3,
+      "workOrderNumber": "WO-X",
+      "mainProfileId": "MP-R28REAL",
+      "mainProfileCode": "MAIN-28REAL",
+      "mainProfileName": "Regression 28-pattern profile",
+      "materialCode": "M",
+      "materialName": null,
+      "materialColor": "ELS",
+      "materialColorClass": "anodized",
+      "cuttingCode": "C540",
+      "cuttingName": "540",
+      "pieceLengthMm": 540,
+      "quantity": 180
+    },
+    {
+      "productionRowId": "r4",
+      "rowIndex": 4,
+      "workOrderNumber": "WO-X",
+      "mainProfileId": "MP-R28REAL",
+      "mainProfileCode": "MAIN-28REAL",
+      "mainProfileName": "Regression 28-pattern profile",
+      "materialCode": "M",
+      "materialName": null,
+      "materialColor": "ELS",
+      "materialColorClass": "anodized",
+      "cuttingCode": "C380",
+      "cuttingName": "380",
+      "pieceLengthMm": 380,
+      "quantity": 144
+    }
+  ],
+  "_meta": {
+    "primaryProfileCode": "MAIN-28REAL",
+    "documentedPoorRun": {
+      "distinctPatterns": 28,
+      "efficiencyPctApprox": 93.0,
+      "totalBars": 220,
+      "totalHurdaMm": 150000,
+      "recoverableMaterialPctApprox": 93.0
+    },
+    "notes": "Baseline documents prior tool behaviour; engineered payload matches production-ish demand scale."
+  }
+}

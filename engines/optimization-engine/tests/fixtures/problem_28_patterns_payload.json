@@ -1,0 +1,13 @@
+{
+  "_comment": "Synthetic multi-quantity regression: column-gen profile with mixed lengths; consolidation should bound distinct templates.",
+  "planYear": 2026,
+  "weekNumber": 18,
+  "cutListSnapshotId": "snap-problem-patterns-rca",
+  "stockBarLengthMm": 6200,
+  "materialColorClass": "anodized",
+  "piecesMmQty": [
+    { "pieceLengthMm": 1048, "quantity": 80 },
+    { "pieceLengthMm": 898, "quantity": 60 },
+    { "pieceLengthMm": 720, "quantity": 50 }
+  ]
+}

@@ -7,6 +7,7 @@ import {
   jsonb,
   numeric,
   pgSchema,
+  text,
   timestamp,
   uniqueIndex,
   uuid,
@@ -32,6 +33,7 @@ export const productionPlanImportBatches = productionPlanSchema.table(
     id: uuid("id").primaryKey().notNull(),
     fileName: varchar("file_name", { length: 255 }).notNull(),
     sheetName: varchar("sheet_name", { length: 255 }).notNull(),
+    planYear: integer("plan_year"),
     weekNumber: integer("week_number"),
     status: varchar("status", { length: 40 }).notNull(),
     totalRowCount: integer("total_row_count").notNull(),
@@ -58,10 +60,14 @@ export const productionPlanImportBatches = productionPlanSchema.table(
     weekNumberIndex: index("production_plan_import_batches_week_number_idx").on(
       table.weekNumber
     ),
+    planYearWeekIndex: index("production_plan_import_batches_plan_year_week_idx").on(
+      table.planYear,
+      table.weekNumber
+    ),
     activeWeekUniqueIndex: uniqueIndex(
-      "production_plan_import_batches_active_week_unique"
+      "production_plan_import_batches_active_year_week_unique"
     )
-      .on(table.weekNumber)
+      .on(table.planYear, table.weekNumber)
       .where(sql`${table.status} = 'active'`)
   })
 );
@@ -89,7 +95,10 @@ export const productionPlanRows = productionPlanSchema.table(
     }),
     workOrderNumber: varchar("work_order_number", { length: 100 }),
     materialCode: varchar("material_code", { length: 100 }),
-    materialName: varchar("material_name", { length: 255 }),
+    materialName: text("material_name"),
+    materialColor: varchar("material_color", { length: 40 }),
+    materialSize: varchar("material_size", { length: 20 }),
+    mainProfileCode: varchar("main_profile_code", { length: 100 }),
     quantity: numeric("quantity", {
       precision: 18,
       scale: 3,
@@ -98,7 +107,9 @@ export const productionPlanRows = productionPlanSchema.table(
     orderUnit: varchar("order_unit", { length: 50 }),
     plannedFinishDate: date("planned_finish_date", { mode: "string" }),
     departmentCode: varchar("department_code", { length: 100 }),
+    departmentName: varchar("department_name", { length: 100 }),
     priority: varchar("priority", { length: 100 }),
+    priorityLevel: integer("priority_level"),
     isValid: boolean("is_valid").notNull(),
     validationErrors: jsonb("validation_errors")
       .$type<string[]>()
@@ -119,12 +130,59 @@ export const productionPlanRows = productionPlanSchema.table(
   },
   (table) => ({
     batchIdIndex: index("production_plan_rows_batch_id_idx").on(table.batchId),
+    batchMaterialCodeIndex: index(
+      "production_plan_rows_batch_material_code_idx"
+    ).on(table.batchId, table.materialCode),
+    batchWorkOrderIndex: index("production_plan_rows_batch_work_order_idx").on(
+      table.batchId,
+      table.workOrderNumber
+    ),
     batchRowUniqueIndex: uniqueIndex(
       "production_plan_rows_batch_id_row_index_unique"
     ).on(table.batchId, table.rowIndex)
   })
 );
 
+export const productionPlanOutboxEvents = productionPlanSchema.table(
+  "production_plan_outbox_events",
+  {
+    id: uuid("id").primaryKey().notNull(),
+    eventType: varchar("event_type", { length: 120 }).notNull(),
+    aggregateId: uuid("aggregate_id").notNull(),
+    payloadJson: jsonb("payload_json")
+      .$type<Record<string, unknown>>()
+      .notNull(),
+    status: varchar("status", { length: 40 }).notNull().default("pending"),
+    attempts: integer("attempts").notNull().default(0),
+    nextAttemptAt: timestamp("next_attempt_at", {
+      mode: "string",
+      withTimezone: true
+    })
+      .notNull()
+      .defaultNow(),
+    createdAt: timestamp("created_at", {
+      mode: "string",
+      withTimezone: true
+    })
+      .notNull()
+      .defaultNow(),
+    publishedAt: timestamp("published_at", {
+      mode: "string",
+      withTimezone: true
+    })
+  },
+  (table) => ({
+    statusNextAttemptIndex: index(
+      "production_plan_outbox_events_status_next_attempt_idx"
+    ).on(table.status, table.nextAttemptAt),
+    aggregateIndex: index("production_plan_outbox_events_aggregate_idx").on(
+      table.aggregateId
+    )
+  })
+);
+
 export type ProductionPlanImportBatch =
   typeof productionPlanImportBatches.$inferSelect;
 export type ProductionPlanRow = typeof productionPlanRows.$inferSelect;
+export type ProductionPlanOutboxEvent =
+  typeof productionPlanOutboxEvents.$inferSelect;

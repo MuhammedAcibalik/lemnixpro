@@ -15,6 +15,41 @@
       "when": 1773832641927,
       "tag": "0001_puzzling_luckman",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1773832643000,
+      "tag": "0002_cut_list_snapshots",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1777140000000,
+      "tag": "0003_optimization_v2_columns",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1777140300000,
+      "tag": "0004_request_lifecycle_results",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1777850000000,
+      "tag": "0005_optimization_request_guardrails",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1777960000000,
+      "tag": "0006_optimization_claim_progress",
+      "breakpoints": true
     }
   ]
 }

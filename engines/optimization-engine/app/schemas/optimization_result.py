@@ -1,8 +1,15 @@
-from pydantic import BaseModel
+from app.schemas.optimization_request import MessageMetadata, SharedContractModel
 
 
-class OptimizationResult(BaseModel):
+class OptimizationCompletedMessage(SharedContractModel):
+    metadata: MessageMetadata
     job_id: str
     result_id: str
     completed_at: str
-    status: str
+
+
+class OptimizationFailedMessage(SharedContractModel):
+    metadata: MessageMetadata
+    job_id: str
+    failed_at: str
+    reason: str

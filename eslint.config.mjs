@@ -1,11 +1,14 @@
-import { FlatCompat } from "@eslint/eslintrc";
 import js from "@eslint/js";
+import nextVitals from "eslint-config-next/core-web-vitals";
 import importPlugin from "eslint-plugin-import";
 import tseslint from "typescript-eslint";
 
-const compat = new FlatCompat({
-  baseDirectory: import.meta.dirname
-});
+const nextWebConfigs = nextVitals
+  .filter((config) => !("ignores" in config && Object.keys(config).length === 1))
+  .map((config) => ({
+    ...config,
+    files: ["apps/web/**/*.{js,jsx,ts,tsx,mjs,mts,cts}"]
+  }));
 
 export default tseslint.config(
   {
@@ -20,6 +23,7 @@ export default tseslint.config(
     ]
   },
   js.configs.recommended,
+  ...nextWebConfigs,
   ...tseslint.configs.recommendedTypeChecked,
   {
     files: ["**/*.{ts,tsx}"],
@@ -39,8 +43,8 @@ export default tseslint.config(
       "@typescript-eslint/no-misused-promises": [
         "error",
         {
-          "checksVoidReturn": {
-            "attributes": false
+          checksVoidReturn: {
+            attributes: false
           }
         }
       ]
@@ -55,11 +59,5 @@ export default tseslint.config(
     rules: {
       "import/no-relative-packages": "error"
     }
-  },
-  ...compat.config({
-    extends: ["next/core-web-vitals"]
-  }).map((config) => ({
-    ...config,
-    files: ["apps/web/**/*.{ts,tsx}"]
-  }))
+  }
 );

@@ -2,7 +2,11 @@ import { ApiProperty } from "@nestjs/swagger";
 import { Type } from "class-transformer";
 import { IsInt, Min } from "class-validator";
 
-export class CreateOptimizationRequestDto {
+import type { CreateOptimizationRequestRequest } from "@lemnixpro/shared-contracts";
+
+export class CreateOptimizationRequestDto
+  implements CreateOptimizationRequestRequest
+{
   @ApiProperty({
     example: 12
   })

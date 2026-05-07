@@ -1,0 +1,20 @@
+{
+  "version": "7",
+  "dialect": "postgresql",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "7",
+      "when": 1773834000000,
+      "tag": "0000_cut_list_snapshots",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1773834001000,
+      "tag": "0001_plan_year_source_batch_idempotency",
+      "breakpoints": true
+    }
+  ]
+}

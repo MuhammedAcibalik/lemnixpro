@@ -6,6 +6,7 @@ import {
 } from "@nestjs/common";
 
 import type { OptimizationQueueEnvelope } from "@lemnixpro/shared-contracts";
+import { createMessageMetadata } from "@lemnixpro/shared-utils";
 
 import {
   MainProfileResponse,
@@ -16,24 +17,25 @@ import {
   ProductionPlanClient,
   ProductionPlanImportBatchSummary
 } from "../../infrastructure/http/production-plan.client";
-import type { OptimizationRequestRecord } from "../../infrastructure/db/schema";
-
-import type { CreateOptimizationRequestDto } from "./dto/create-optimization-request.dto";
 import type {
+  OptimizationRequestListRecord,
+  OptimizationRequestRecord
+} from "../../infrastructure/db/schema";
+
+import type {
+  CreateOptimizationRequestDto,
+  CreateOptimizationRequestResponseDto,
   OptimizationDemandRowDto,
   OptimizationDryRunResponseDto,
   OptimizationMainProfileInputDto,
   OptimizationPreparationUnmatchedReasonCode,
   OptimizationPreparationUnmatchedRowDto,
-  OptimizationRequestPayloadDto,
-  OptimizationUnmatchedSummaryDto
-} from "./dto/optimization-dry-run-response.dto";
-import type {
-  CreateOptimizationRequestResponseDto,
   OptimizationRequestDetailResponseDto,
+  OptimizationRequestPayloadDto,
   OptimizationRequestRequeueResponseDto,
-  OptimizationRequestSummaryDto
-} from "./dto/optimization-request-response.dto";
+  OptimizationRequestSummaryDto,
+  OptimizationUnmatchedSummaryDto
+} from "./dto";
 import {
   OPTIMIZATION_REQUEST_QUEUE_PUBLISHER,
   type OptimizationRequestQueuePublisher
@@ -151,7 +153,7 @@ export class OptimizationRequestsService {
 
     return {
       request: this.toRequestSummary(request),
-      payloadPreview: request.payloadJson
+      payloadPreview: request.payloadJson as OptimizationRequestPayloadDto
     };
   }
 
@@ -267,13 +269,13 @@ export class OptimizationRequestsService {
   }
 
   private toRequestSummary(
-    request: OptimizationRequestRecord
+    request: OptimizationRequestListRecord
   ): OptimizationRequestSummaryDto {
     return {
       id: request.id,
       weekNumber: request.weekNumber,
       sourceBatchId: request.sourceBatchId,
-      status: request.status,
+      status: request.status as OptimizationRequestSummaryDto["status"],
       matchedRows: request.matchedRows,
       unmatchedRows: request.unmatchedRows,
       queuedAt: request.queuedAt,
@@ -287,10 +289,14 @@ export class OptimizationRequestsService {
     queuedAt: string
   ): OptimizationQueueEnvelope {
     return {
+      metadata: createMessageMetadata({
+        causationId: request.id,
+        occurredAt: queuedAt
+      }),
       requestId: request.id,
       weekNumber: request.weekNumber,
       sourceBatchId: request.sourceBatchId,
-      payload: request.payloadJson,
+      payload: request.payloadJson as OptimizationRequestPayloadDto,
       queuedAt
     };
   }
@@ -336,6 +342,11 @@ export class OptimizationRequestsService {
     const details: string[] = [];
     const normalizedMaterialCode = this.normalizeCode(row.materialCode);
 
+    let matchingProfiles =
+      normalizedMaterialCode === null
+        ? []
+        : (mainProfilesByLinkedProductCode.get(normalizedMaterialCode) ?? []);
+
     if (!row.isValid) {
       reasons.push("production_row_invalid");
       details.push(
@@ -354,11 +365,6 @@ export class OptimizationRequestsService {
       );
     }
 
-    const matchingProfiles =
-      normalizedMaterialCode === null
-        ? []
-        : (mainProfilesByLinkedProductCode.get(normalizedMaterialCode) ?? []);
-
     if (normalizedMaterialCode && matchingProfiles.length === 0) {
       reasons.push("missing_active_main_profile");
       details.push(
@@ -367,10 +373,32 @@ export class OptimizationRequestsService {
     }
 
     if (normalizedMaterialCode && matchingProfiles.length > 1) {
-      reasons.push("ambiguous_active_main_profile");
-      details.push(
-        `Multiple active main profiles share linkedProductCode "${normalizedMaterialCode}": ${matchingProfiles.map((profile) => profile.code).join(", ")}.`
-      );
+      const profileHint = this.normalizeCode(row.mainProfileCode);
+
+      if (profileHint) {
+        const narrowedProfiles = matchingProfiles.filter(
+          (profile) => this.normalizeCode(profile.code) === profileHint
+        );
+
+        if (narrowedProfiles.length === 1) {
+          matchingProfiles = narrowedProfiles;
+        } else if (narrowedProfiles.length === 0) {
+          reasons.push("main_profile_code_unmatched");
+          details.push(
+            `Üretim planı satırındaki profil kodu "${row.mainProfileCode}" bu ana ürün (${normalizedMaterialCode}) için tanımlı aktif ana profillerle eşleşmiyor: ${matchingProfiles.map((p) => p.code).join(", ")}.`
+          );
+        } else {
+          reasons.push("ambiguous_active_main_profile");
+          details.push(
+            `Bu ana ürün ("${normalizedMaterialCode}") ve profil kodu ("${row.mainProfileCode}") için birden fazla eşleşme var (${narrowedProfiles.map((p) => p.code).join(", ")}).`
+          );
+        }
+      } else {
+        reasons.push("ambiguous_active_main_profile");
+        details.push(
+          `Bu ana ürün ("${normalizedMaterialCode}") için birden fazla aktif ana profil tanımlı (${matchingProfiles.map((profile) => profile.code).join(", ")}). Üretim planı satırına hangi profilin kullanılacağını seçmek için "profil kodu" alanını doldurun.`
+        );
+      }
     }
 
     if (reasons.length > 0) {
@@ -420,6 +448,7 @@ export class OptimizationRequestsService {
       id: batch.id,
       fileName: batch.fileName,
       sheetName: batch.sheetName,
+      planYear: (batch as { planYear?: number | null }).planYear ?? null,
       weekNumber: batch.weekNumber,
       status: batch.status,
       totalRowCount: batch.totalRowCount,

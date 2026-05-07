@@ -6,11 +6,16 @@ import {
   Param,
   ParseUUIDPipe,
   Patch,
-  Post
+  Post,
+  UploadedFile,
+  UseInterceptors
 } from "@nestjs/common";
+import { FileInterceptor } from "@nestjs/platform-express";
 import {
   ApiBadRequestResponse,
+  ApiBody,
   ApiConflictResponse,
+  ApiConsumes,
   ApiCreatedResponse,
   ApiNotFoundResponse,
   ApiOkResponse,
@@ -18,10 +23,16 @@ import {
   ApiTags
 } from "@nestjs/swagger";
 
+import type { MainProfileCuttingRealignmentResult } from "@lemnixpro/shared-contracts";
+
 import { CreateMainProfileRequestDto } from "./dto/create-main-profile-request.dto";
+import { MainProfileImportBatchResponseDto } from "./dto/main-profile-import-batch-response.dto";
 import { MainProfileResponseDto } from "./dto/main-profile-response.dto";
 import { UpdateMainProfileRequestDto } from "./dto/update-main-profile-request.dto";
-import { MainProfilesService } from "./main-profiles.service";
+import {
+  MainProfilesService,
+  type UploadedMainProfileImportFile
+} from "./main-profiles.service";
 
 @ApiTags("main-profiles")
 @Controller("main-profiles")
@@ -30,6 +41,30 @@ export class MainProfilesController {
     @Inject(MainProfilesService)
     private readonly mainProfilesService: MainProfilesService
   ) {}
+
+  @Post("imports")
+  @UseInterceptors(FileInterceptor("file"))
+  @ApiOperation({ summary: "Profil Yönetimi Excel dosyasını içeri aktarır." })
+  @ApiConsumes("multipart/form-data")
+  @ApiBody({
+    schema: {
+      type: "object",
+      required: ["file"],
+      properties: {
+        file: {
+          type: "string",
+          format: "binary"
+        }
+      }
+    }
+  })
+  @ApiCreatedResponse({ type: MainProfileImportBatchResponseDto })
+  @ApiBadRequestResponse({ description: "Profil dosyası geçersiz." })
+  async createImport(
+    @UploadedFile() file?: UploadedMainProfileImportFile
+  ): Promise<MainProfileImportBatchResponseDto> {
+    return this.mainProfilesService.createImport(file);
+  }
 
   @Post()
   @ApiOperation({ summary: "Create a main profile master data record." })
@@ -47,6 +82,16 @@ export class MainProfilesController {
   @ApiOkResponse({ type: MainProfileResponseDto, isArray: true })
   async findAll(): Promise<MainProfileResponseDto[]> {
     return this.mainProfilesService.findAll();
+  }
+
+  @Post("maintenance/realign-cutting-specs")
+  @ApiOperation({
+    summary:
+      "Kesim koduna göre yanlış profile yazılmış düz kesimleri doğru profile taşır (tek seferlik bakım)."
+  })
+  @ApiOkResponse({ description: "Taşınan kesim sayısı ve çözülemeyen kayıtlar." })
+  async realignMisplacedCuttingSpecs(): Promise<MainProfileCuttingRealignmentResult> {
+    return this.mainProfilesService.realignMisplacedCuttingSpecs();
   }
 
   @Get(":id")

@@ -2,6 +2,8 @@ import { ApiPropertyOptional } from "@nestjs/swagger";
 import { Transform } from "class-transformer";
 import { IsOptional, IsString, MaxLength } from "class-validator";
 
+import type { UpdateProductionPlanRowRequest } from "@lemnixpro/shared-contracts";
+
 function normalizeOptionalScalarInput(
   value: unknown
 ): unknown {
@@ -26,7 +28,9 @@ function normalizeOptionalScalarInput(
   return trimmedValue === "" ? null : trimmedValue;
 }
 
-export class UpdateProductionPlanRowRequestDto {
+export class UpdateProductionPlanRowRequestDto
+  implements UpdateProductionPlanRowRequest
+{
   @ApiPropertyOptional()
   @Transform(({ value }) => normalizeOptionalScalarInput(value))
   @IsOptional()
@@ -75,6 +79,13 @@ export class UpdateProductionPlanRowRequestDto {
   @IsString()
   @MaxLength(255)
   materialName?: string | null;
+
+  @ApiPropertyOptional()
+  @Transform(({ value }) => normalizeOptionalScalarInput(value))
+  @IsOptional()
+  @IsString()
+  @MaxLength(100)
+  mainProfileCode?: string | null;
 
   @ApiPropertyOptional()
   @Transform(({ value }) => normalizeOptionalScalarInput(value))

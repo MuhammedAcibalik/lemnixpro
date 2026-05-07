@@ -15,6 +15,8 @@ LemnixPRO uses explicit service-to-service integration. Domain services do not c
 - `api-gateway-service` calls downstream services through explicit HTTP contracts.
 - Direct service-to-service HTTP calls are allowed only when one service needs another service's owned capability or read model.
 - Service URLs and credentials are configured through environment variables owned by the caller.
+- HTTP callers propagate `x-request-id` and `x-correlation-id` so logs can be joined across web, gateway, and domain services.
+- Internal service calls include `x-lemnixpro-internal-token`; production services reject non-health traffic without it.
 
 ## Asynchronous Communication
 
@@ -23,7 +25,12 @@ LemnixPRO uses explicit service-to-service integration. Domain services do not c
   - optimization requested
   - optimization completed
   - optimization failed
+- `optimization-orchestrator-service` publishes requested events.
+- `engines/optimization-engine` consumes requested events and publishes completed or failed events.
+- `result-service` consumes completed and failed events and persists result records.
 - Async messaging is the default path for workflows that involve the Python optimization engine.
+- Queue messages include `metadata.messageId`, `metadata.correlationId`, `metadata.causationId`, `metadata.attempt`, and `metadata.occurredAt`.
+- Invalid or poison messages are dead-lettered instead of being requeued forever.
 
 ## Contract and Sharing Rules
 

@@ -57,7 +57,10 @@ type MainProfilesRepositoryShape = {
   }): Promise<MainProfileResponse>;
   findAll(): Promise<MainProfileResponse[]>;
   findById(id: string): Promise<MainProfileResponse | null>;
-  findByCode(code: string): Promise<MainProfileResponse | null>;
+  findByLinkedProductAndCode(
+    linkedProductCode: string,
+    code: string
+  ): Promise<MainProfileResponse | null>;
   update(
     id: string,
     input: Partial<{
@@ -121,8 +124,8 @@ describe("master-data-service main profiles", () => {
       );
     `);
     await memoryPool.query(`
-      create unique index master_data_main_profiles_code_unique
-        on master_data.main_profiles (code);
+      create unique index master_data_main_profiles_linked_product_profile_code_unique
+        on master_data.main_profiles (linked_product_code, code);
     `);
 
     const mainProfilesRepository: MainProfilesRepositoryShape = {
@@ -177,7 +180,7 @@ describe("master-data-service main profiles", () => {
              created_at,
              updated_at
            from master_data.main_profiles
-           order by code asc`
+           order by linked_product_code asc, code asc`
         );
 
         return result.rows
@@ -207,7 +210,7 @@ describe("master-data-service main profiles", () => {
 
         return mapMainProfileRow(result.rows[0]);
       },
-      async findByCode(code: string) {
+      async findByLinkedProductAndCode(linkedProductCode: string, code: string) {
         const result = await memoryPool.query<MainProfileRow>(
           `select
              id,
@@ -221,9 +224,9 @@ describe("master-data-service main profiles", () => {
              created_at,
              updated_at
            from master_data.main_profiles
-           where code = $1
+           where linked_product_code = $1 and code = $2
            limit 1`,
-          [code]
+          [linkedProductCode.trim().toUpperCase(), code.trim().toUpperCase()]
         );
 
         return mapMainProfileRow(result.rows[0]);
@@ -375,7 +378,7 @@ describe("master-data-service main profiles", () => {
         code: "mp-001",
         name: "Duplicate Profile",
         stockLengthMm: 6000,
-        linkedProductCode: "PRD-200",
+        linkedProductCode: "prd-100",
         linkedProductName: "Duplicate Product"
       })
       .expect(409);

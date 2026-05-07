@@ -1,9 +1,4 @@
-import {
-  HttpException,
-  Inject,
-  Injectable,
-  ServiceUnavailableException
-} from "@nestjs/common";
+import { Inject, Injectable } from "@nestjs/common";
 
 import { UpstreamService } from "./upstream.service";
 
@@ -33,11 +28,16 @@ export type ProductionPlanActiveBatchRow = {
   workOrderNumber: string | null;
   materialCode: string | null;
   materialName: string | null;
+  materialColor: string | null;
+  materialSize: string | null;
+  mainProfileCode: string | null;
   quantity: number | null;
   orderUnit: string | null;
   plannedFinishDate: string | null;
   departmentCode: string | null;
+  departmentName: string | null;
   priority: string | null;
+  priorityLevel: number | null;
   isValid: boolean;
   validationErrors: string[];
 };
@@ -66,50 +66,10 @@ export class ProductionPlanClient {
   }
 
   private async request<T>(path: string, init: RequestInit): Promise<T> {
-    const baseUrl = this.upstreamService.getProductionPlanServiceBaseUrl();
-    const headers = new Headers(init.headers);
-    headers.set("accept", "application/json");
-
-    let response: Response;
-
-    try {
-      response = await fetch(`${baseUrl}${path}`, {
-        ...init,
-        headers
-      });
-    } catch {
-      throw new ServiceUnavailableException(
-        "Production plan service is unavailable."
-      );
-    }
-
-    const payload = await this.parsePayload(response);
-
-    if (!response.ok) {
-      throw new HttpException(this.normalizeErrorPayload(payload), response.status);
-    }
-
-    return payload as T;
-  }
-
-  private async parsePayload(response: Response): Promise<unknown> {
-    const contentType = response.headers.get("content-type") ?? "";
-
-    if (contentType.includes("application/json")) {
-      return response.json();
-    }
-
-    const text = await response.text();
-    return text ? { message: text } : { message: response.statusText };
-  }
-
-  private normalizeErrorPayload(payload: unknown): object {
-    if (payload && typeof payload === "object") {
-      return payload;
-    }
-
-    return {
-      message: "Production plan service request failed."
-    };
+    return this.upstreamService.request<T>(
+      this.upstreamService.getProductionPlanServiceBaseUrl(),
+      path,
+      init
+    );
   }
 }

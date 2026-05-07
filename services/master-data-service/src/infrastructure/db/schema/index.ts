@@ -2,7 +2,9 @@ import { sql } from "drizzle-orm";
 import {
   boolean,
   check,
+  index,
   integer,
+  jsonb,
   pgSchema,
   text,
   timestamp,
@@ -10,6 +12,8 @@ import {
   uuid,
   varchar
 } from "drizzle-orm/pg-core";
+
+import type { MainProfileCuttingSpec } from "@lemnixpro/shared-contracts";
 
 export const schemaNamespace = "master_data";
 
@@ -24,6 +28,10 @@ export const mainProfiles = masterDataSchema.table(
     stockLengthMm: integer("stock_length_mm").notNull(),
     linkedProductCode: varchar("linked_product_code", { length: 100 }).notNull(),
     linkedProductName: varchar("linked_product_name", { length: 200 }).notNull(),
+    cuttingSpecs: jsonb("cutting_specs")
+      .$type<MainProfileCuttingSpec[]>()
+      .notNull()
+      .default(sql`'[]'::jsonb`),
     isActive: boolean("is_active").notNull().default(true),
     notes: text("notes"),
     createdAt: timestamp("created_at", {
@@ -40,9 +48,12 @@ export const mainProfiles = masterDataSchema.table(
       .defaultNow()
   },
   (table) => ({
-    codeUniqueIndex: uniqueIndex("master_data_main_profiles_code_unique").on(
-      table.code
-    ),
+    linkedProductAndProfileCodeUnique: uniqueIndex(
+      "master_data_main_profiles_linked_product_profile_code_unique"
+    ).on(table.linkedProductCode, table.code),
+    activeLinkedProductIndex: index(
+      "master_data_main_profiles_active_linked_product_idx"
+    ).on(table.isActive, table.linkedProductCode),
     stockLengthPositiveCheck: check(
       "master_data_main_profiles_stock_length_positive",
       sql`${table.stockLengthMm} > 0`
@@ -50,4 +61,25 @@ export const mainProfiles = masterDataSchema.table(
   })
 );
 
+export const mainProfileImportBatches = masterDataSchema.table(
+  "main_profile_import_batches",
+  {
+    id: uuid("id").primaryKey().notNull(),
+    fileName: varchar("file_name", { length: 255 }).notNull(),
+    sheetName: varchar("sheet_name", { length: 255 }).notNull(),
+    totalRowCount: integer("total_row_count").notNull(),
+    validRowCount: integer("valid_row_count").notNull(),
+    invalidRowCount: integer("invalid_row_count").notNull(),
+    importedProfileCount: integer("imported_profile_count").notNull(),
+    importedCuttingSpecCount: integer("imported_cutting_spec_count").notNull(),
+    createdAt: timestamp("created_at", {
+      mode: "string",
+      withTimezone: true
+    })
+      .notNull()
+      .defaultNow()
+  }
+);
+
 export type MainProfile = typeof mainProfiles.$inferSelect;
+export type MainProfileImportBatch = typeof mainProfileImportBatches.$inferSelect;

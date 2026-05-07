@@ -8,6 +8,8 @@ import {
   NotFoundException
 } from "@nestjs/common";
 
+import type { ProductionPlanImportBatchStatus } from "@lemnixpro/shared-contracts";
+
 import type {
   ProductionPlanImportBatch,
   ProductionPlanRow
@@ -20,6 +22,7 @@ import {
 import { ProductionPlanImportBatchDetailResponseDto } from "./dto/production-plan-import-batch-detail-response.dto";
 import { ProductionPlanImportBatchResponseDto } from "./dto/production-plan-import-batch-response.dto";
 import { ProductionPlanImportRowResponseDto } from "./dto/production-plan-import-row-response.dto";
+import { ProductionPlanImportRowsPageResponseDto } from "./dto/production-plan-import-rows-page-response.dto";
 import type { UpdateProductionPlanRowRequestDto } from "./dto/update-production-plan-row-request.dto";
 import {
   MAX_IMPORT_FILE_SIZE_BYTES,
@@ -56,6 +59,18 @@ export class ProductionPlanImportsService {
     this.productionPlanImportsRepository = productionPlanImportsRepository;
   }
 
+  /**
+   * Internal: enqueue cut-list reconcile for every active imported batch that can be reconciled.
+   */
+  async enqueueCutListReconcileForAllActiveBatches(): Promise<{
+    enqueuedBatchCount: number;
+  }> {
+    const enqueuedBatchCount =
+      await this.productionPlanImportsRepository.enqueueCutListReconcileForAllEligibleActiveBatches();
+
+    return { enqueuedBatchCount };
+  }
+
   async createImport(
     file: UploadedProductionPlanImportFile | undefined
   ): Promise<ProductionPlanImportBatchResponseDto> {
@@ -66,11 +81,13 @@ export class ProductionPlanImportsService {
     );
 
     const batchWeekNumber = this.resolveBatchWeekNumber(parsedImport.rows);
+    const batchPlanYear = this.resolveBatchPlanYear(parsedImport.rows);
 
     const createdBatch =
       await this.productionPlanImportsRepository.createImportBatch({
         fileName: normalizedFile.originalname,
         sheetName: parsedImport.sheetName,
+        planYear: batchPlanYear,
         weekNumber: batchWeekNumber,
         status: "imported",
         totalRowCount: parsedImport.totalRowCount,
@@ -88,11 +105,16 @@ export class ProductionPlanImportsService {
           workOrderNumber: row.workOrderNumber,
           materialCode: row.materialCode,
           materialName: row.materialName,
+          materialColor: row.materialColor,
+          materialSize: row.materialSize,
+          mainProfileCode: row.mainProfileCode,
           quantity: row.quantity,
           orderUnit: row.orderUnit,
           plannedFinishDate: row.plannedFinishDate,
           departmentCode: row.departmentCode,
+          departmentName: row.departmentName,
           priority: row.priority,
+          priorityLevel: row.priorityLevel,
           isValid: row.isValid,
           validationErrors: row.validationErrors
         }))
@@ -144,6 +166,50 @@ export class ProductionPlanImportsService {
     const rows = await this.productionPlanImportsRepository.findRowsByBatchId(id);
 
     return rows.map((row) => this.toRowResponse(row));
+  }
+
+  async findRowsByBatchIdPaged(
+    id: string,
+    limitInput: number,
+    offsetInput: number
+  ): Promise<ProductionPlanImportRowsPageResponseDto> {
+    const batch = await this.productionPlanImportsRepository.findImportBatchById(id);
+
+    if (!batch) {
+      throw new NotFoundException(
+        `Production plan import batch "${id}" was not found.`
+      );
+    }
+
+    const limit = Math.min(500, Math.max(1, limitInput));
+    const offset = Math.max(0, offsetInput);
+
+    const totalCount =
+      await this.productionPlanImportsRepository.countRowsByBatchId(id);
+    const rows =
+      await this.productionPlanImportsRepository.findRowsByBatchIdPage(
+        id,
+        limit,
+        offset
+      );
+
+    return {
+      rows: rows.map((row) => this.toRowResponse(row)),
+      totalCount,
+      limit,
+      offset
+    };
+  }
+
+  async deleteImport(id: string): Promise<void> {
+    const deleted =
+      await this.productionPlanImportsRepository.deleteBatchById(id);
+
+    if (!deleted) {
+      throw new NotFoundException(
+        `Production plan import batch "${id}" was not found.`
+      );
+    }
   }
 
   async activateImport(id: string): Promise<ProductionPlanImportBatchResponseDto> {
@@ -245,11 +311,16 @@ export class ProductionPlanImportsService {
             workOrderNumber: normalizedRow.workOrderNumber,
             materialCode: normalizedRow.materialCode,
             materialName: normalizedRow.materialName,
+            materialColor: normalizedRow.materialColor,
+            materialSize: normalizedRow.materialSize,
+            mainProfileCode: normalizedRow.mainProfileCode,
             quantity: normalizedRow.quantity,
             orderUnit: normalizedRow.orderUnit,
             plannedFinishDate: normalizedRow.plannedFinishDate,
             departmentCode: normalizedRow.departmentCode,
+            departmentName: normalizedRow.departmentName,
             priority: normalizedRow.priority,
+            priorityLevel: normalizedRow.priorityLevel,
             isValid: normalizedRow.isValid,
             validationErrors: normalizedRow.validationErrors
           }
@@ -336,6 +407,10 @@ export class ProductionPlanImportsService {
         request.materialName !== undefined
           ? request.materialName
           : existingRow.materialName,
+      mainProfileCode:
+        request.mainProfileCode !== undefined
+          ? request.mainProfileCode
+          : existingRow.mainProfileCode,
       quantity: request.quantity !== undefined ? request.quantity : existingRow.quantity,
       orderUnit: request.orderUnit !== undefined ? request.orderUnit : existingRow.orderUnit,
       plannedFinishDate:
@@ -357,8 +432,9 @@ export class ProductionPlanImportsService {
       id: batch.id,
       fileName: batch.fileName,
       sheetName: batch.sheetName,
+      planYear: batch.planYear,
       weekNumber: batch.weekNumber,
-      status: batch.status,
+      status: batch.status as ProductionPlanImportBatchStatus,
       totalRowCount: batch.totalRowCount,
       validRowCount: batch.validRowCount,
       invalidRowCount: batch.invalidRowCount,
@@ -389,11 +465,16 @@ export class ProductionPlanImportsService {
       workOrderNumber: row.workOrderNumber,
       materialCode: row.materialCode,
       materialName: row.materialName,
+      materialColor: row.materialColor,
+      materialSize: row.materialSize,
+      mainProfileCode: row.mainProfileCode,
       quantity: row.quantity,
       orderUnit: row.orderUnit,
       plannedFinishDate: row.plannedFinishDate,
       departmentCode: row.departmentCode,
+      departmentName: row.departmentName,
       priority: row.priority,
+      priorityLevel: row.priorityLevel,
       isValid: row.isValid,
       validationErrors: row.validationErrors,
       createdAt: row.createdAt,
@@ -416,11 +497,16 @@ export class ProductionPlanImportsService {
       workOrderNumber: row.workOrderNumber,
       materialCode: row.materialCode,
       materialName: row.materialName,
+      materialColor: row.materialColor,
+      materialSize: row.materialSize,
+      mainProfileCode: row.mainProfileCode,
       quantity: row.quantity,
       orderUnit: row.orderUnit,
       plannedFinishDate: row.plannedFinishDate,
       departmentCode: row.departmentCode,
+      departmentName: row.departmentName,
       priority: row.priority,
+      priorityLevel: row.priorityLevel,
       isValid: row.isValid,
       validationErrors: row.validationErrors
     };
@@ -429,8 +515,11 @@ export class ProductionPlanImportsService {
   private resolveBatchWeekNumber(
     rows: NormalizedProductionPlanRow[]
   ): number {
+    const authoritativeRows = rows.some((row) => row.isValid)
+      ? rows.filter((row) => row.isValid)
+      : rows;
     const distinctWeekNumbers = [...new Set(
-      rows
+      authoritativeRows
         .map((row) => row.weekNumber)
         .filter((weekNumber): weekNumber is number => weekNumber !== null)
     )];
@@ -453,4 +542,48 @@ export class ProductionPlanImportsService {
       "The uploaded worksheet contains conflicting week numbers and cannot be imported."
     );
   }
+
+  private resolveBatchPlanYear(
+    rows: NormalizedProductionPlanRow[]
+  ): number | null {
+    const distinctPlanYears = [...new Set(
+      rows
+        .filter((row) => row.isValid)
+        .map((row) =>
+          row.plannedFinishDate
+            ? getIsoWeekYearFromDateString(row.plannedFinishDate)
+            : null
+        )
+        .filter((planYear): planYear is number => Number.isInteger(planYear))
+    )];
+
+    if (distinctPlanYears.length === 1) {
+      const [resolvedPlanYear] = distinctPlanYears;
+
+      if (resolvedPlanYear !== undefined) {
+        return resolvedPlanYear;
+      }
+    }
+
+    if (distinctPlanYears.length === 0) {
+      return null;
+    }
+
+    throw new BadRequestException(
+      "The uploaded worksheet contains conflicting planned finish years and cannot be imported."
+    );
+  }
+}
+
+function getIsoWeekYearFromDateString(dateString: string): number | null {
+  const date = new Date(`${dateString}T00:00:00.000Z`);
+
+  if (Number.isNaN(date.getTime())) {
+    return null;
+  }
+
+  const dayOfWeek = date.getUTCDay() || 7;
+  date.setUTCDate(date.getUTCDate() + 4 - dayOfWeek);
+
+  return date.getUTCFullYear();
 }

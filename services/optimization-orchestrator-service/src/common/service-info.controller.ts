@@ -1,4 +1,4 @@
-import { Controller, Get } from "@nestjs/common";
+import { Controller, Get, Inject } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import { ApiTags } from "@nestjs/swagger";
 
@@ -7,7 +7,10 @@ import type { ServiceInfoResponse } from "@lemnixpro/shared-contracts";
 @ApiTags("service-info")
 @Controller("service-info")
 export class ServiceInfoController {
-  constructor(private readonly configService: ConfigService) {}
+  constructor(
+    @Inject(ConfigService)
+    private readonly configService: ConfigService
+  ) {}
 
   @Get()
   getServiceInfo(): ServiceInfoResponse {

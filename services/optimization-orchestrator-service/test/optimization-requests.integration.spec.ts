@@ -102,11 +102,33 @@ type PersistedOptimizationRequestRow = {
   id: string;
   week_number: number;
   source_batch_id: string;
-  status: "created" | "ready" | "queued" | "failed_preparation";
+  cut_list_snapshot_id?: string | null;
+  plan_year?: number | null;
+  status:
+    | "created"
+    | "ready"
+    | "queued"
+    | "failed_preparation"
+    | "running"
+    | "completed"
+    | "failed"
+    | "cancelled"
+    | "failed_with_quality_floor";
   payload_json: Record<string, unknown> | string;
+  config_json?: Record<string, unknown> | string | null;
+  idempotency_key?: string | null;
   matched_rows: number;
   unmatched_rows: number;
   queued_at: Date | string | null;
+  started_at?: Date | string | null;
+  completed_at?: Date | string | null;
+  failed_at?: Date | string | null;
+  result_id?: string | null;
+  failure_reason?: string | null;
+  failure_reason_code?: string | null;
+  solver_mode?: string | null;
+  progress_json?: Record<string, unknown> | string | null;
+  last_heartbeat_at?: Date | string | null;
   created_at: Date | string;
   updated_at: Date | string;
 };
@@ -140,7 +162,7 @@ describe("optimization-orchestrator-service optimization requests", () => {
   let memoryPool: QueryablePool;
   let productionPlanStubServer: ReturnType<typeof createServer>;
   let masterDataStubServer: ReturnType<typeof createServer>;
-  let publishedEnvelopes: OptimizationQueueEnvelope[];
+  let publishedEnvelopes: Array<OptimizationQueueEnvelope | Record<string, unknown>>;
   let optimizationRequestsRepositoryDouble: OptimizationRequestsRepositoryShape;
   let AppModule: typeof import("../src/app.module").AppModule;
   let optimizationRequestQueuePublisherToken: typeof import("../src/modules/optimization-orchestrator/optimization-request-queue.publisher").OPTIMIZATION_REQUEST_QUEUE_PUBLISHER;
@@ -368,13 +390,20 @@ describe("optimization-orchestrator-service optimization requests", () => {
     });
     expect(body.payloadPreview.demandRows).toHaveLength(2);
     expect(publishedEnvelopes).toEqual([
-      {
+      expect.objectContaining({
+        metadata: expect.objectContaining({
+          messageId: expect.any(String),
+          correlationId: expect.any(String),
+          causationId: body.request.id,
+          attempt: 1,
+          occurredAt: body.request.queuedAt
+        }),
         requestId: body.request.id,
         weekNumber: 14,
         sourceBatchId: batchIds.week14,
         payload: body.payloadPreview,
         queuedAt: body.request.queuedAt
-      }
+      })
     ]);
 
     const persistedRequests = await listPersistedOptimizationRequests(memoryPool);
@@ -446,7 +475,7 @@ describe("optimization-orchestrator-service optimization requests", () => {
           workOrderNumber: "WO-004",
           reasons: ["ambiguous_active_main_profile"],
           details: [
-            'Multiple active main profiles share linkedProductCode "PRD-200": MP-002, MP-003.'
+            'Bu ana ürün ("PRD-200") için birden fazla aktif ana profil tanımlı (MP-002, MP-003). Üretim planı satırına hangi profilin kullanılacağını seçmek için "profil kodu" alanını doldurun.'
           ]
         }
       ]
@@ -578,13 +607,20 @@ describe("optimization-orchestrator-service optimization requests", () => {
     });
     expect(body.request.queuedAt).toEqual(expect.any(String));
     expect(publishedEnvelopes).toEqual([
-      {
+      expect.objectContaining({
+        metadata: expect.objectContaining({
+          messageId: expect.any(String),
+          correlationId: expect.any(String),
+          causationId: readyRequest.id,
+          attempt: 1,
+          occurredAt: body.request.queuedAt
+        }),
         requestId: readyRequest.id,
         weekNumber: readyRequest.weekNumber,
         sourceBatchId: readyRequest.sourceBatchId,
         payload: readyRequest.payloadJson,
         queuedAt: body.request.queuedAt
-      }
+      })
     ]);
 
     const persistedRequests = await listPersistedOptimizationRequests(memoryPool);
@@ -1266,7 +1302,7 @@ function toOptimizationRequestSummaryResponse(
     id: request.id,
     weekNumber: request.weekNumber,
     sourceBatchId: request.sourceBatchId,
-    status: request.status,
+    status: request.status as OptimizationRequestSummaryResponse["status"],
     matchedRows: request.matchedRows,
     unmatchedRows: request.unmatchedRows,
     queuedAt: request.queuedAt,
@@ -1348,11 +1384,24 @@ function mapPersistedOptimizationRequestRow(
     id: row.id,
     weekNumber: row.week_number,
     sourceBatchId: row.source_batch_id,
+    cutListSnapshotId: row.cut_list_snapshot_id ?? null,
+    planYear: row.plan_year ?? null,
     status: row.status,
     payloadJson,
+    configJson: null,
+    idempotencyKey: row.idempotency_key ?? null,
     matchedRows: row.matched_rows,
     unmatchedRows: row.unmatched_rows,
     queuedAt: normalizeTimestamp(row.queued_at),
+    startedAt: normalizeTimestamp(row.started_at ?? null),
+    completedAt: normalizeTimestamp(row.completed_at ?? null),
+    failedAt: normalizeTimestamp(row.failed_at ?? null),
+    resultId: row.result_id ?? null,
+    failureReason: row.failure_reason ?? null,
+    failureReasonCode: row.failure_reason_code ?? null,
+    solverMode: row.solver_mode ?? null,
+    progressJson: null,
+    lastHeartbeatAt: normalizeTimestamp(row.last_heartbeat_at ?? null),
     createdAt: normalizeTimestamp(row.created_at) ?? "",
     updatedAt: normalizeTimestamp(row.updated_at) ?? ""
   };

@@ -1,27 +1,12 @@
-const platformAreas = [
-  "Gateway and identity boundaries",
-  "Master data and weekly planning services",
-  "Optimization orchestration and result services",
-  "Python optimization engine integration surface"
-];
+import { redirect } from "next/navigation";
 
-export default function HomePage() {
-  return (
-    <main className="app-shell">
-      <section className="hero">
-        <p className="eyebrow">Backend-first foundation</p>
-        <h1>LemnixPRO Platform</h1>
-        <p className="description">
-          The web application is intentionally thin in this pass. Core work is
-          focused on service boundaries, persistence ownership, messaging
-          contracts, and optimization engine integration points.
-        </p>
-        <ul className="capability-list">
-          {platformAreas.map((area) => (
-            <li key={area}>{area}</li>
-          ))}
-        </ul>
-      </section>
-    </main>
-  );
+import { DASHBOARD_ROUTE, LOGIN_ROUTE } from "@/lib/auth";
+import { readSessionToken } from "@/server/auth/session";
+
+export const dynamic = "force-dynamic";
+
+export default async function IndexPage() {
+  const token = await readSessionToken();
+
+  redirect(token ? DASHBOARD_ROUTE : LOGIN_ROUTE);
 }

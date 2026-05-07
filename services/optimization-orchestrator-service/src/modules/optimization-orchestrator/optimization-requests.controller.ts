@@ -18,16 +18,16 @@ import {
   ApiUnprocessableEntityResponse
 } from "@nestjs/swagger";
 
-import { CreateOptimizationRequestDto } from "./dto/create-optimization-request.dto";
-import { OptimizationDryRunResponseDto } from "./dto/optimization-dry-run-response.dto";
 import {
+  CreateOptimizationRequestDto,
   CreateOptimizationRequestResponseDto,
+  OptimizationDryRunResponseDto,
   OptimizationRequestDetailResponseDto,
   OptimizationRequestPreparationFailedResponseDto,
   OptimizationRequestRequeueRejectedResponseDto,
   OptimizationRequestRequeueResponseDto,
   OptimizationRequestSummaryDto
-} from "./dto/optimization-request-response.dto";
+} from "./dto";
 import { OptimizationRequestsService } from "./optimization-requests.service";
 
 @ApiTags("optimization-requests")

@@ -2,6 +2,11 @@ import { ApiProperty } from "@nestjs/swagger";
 import { ApiPropertyOptional } from "@nestjs/swagger";
 
 import {
+  type CreateOptimizationRequestResponse,
+  type OptimizationRequestDetailResponse,
+  type OptimizationRequestPreparationFailedResponse,
+  type OptimizationRequestRequeueRejectedResponse,
+  type OptimizationRequestRequeueResponse,
   optimizationRequestStatuses,
   type OptimizationRequestSummary
 } from "@lemnixpro/shared-contracts";
@@ -12,39 +17,40 @@ import {
 } from "./optimization-dry-run-response.dto";
 
 export class OptimizationRequestSummaryDto implements OptimizationRequestSummary {
-  @ApiProperty()
+  @ApiProperty({ type: String })
   id!: string;
 
-  @ApiProperty()
+  @ApiProperty({ type: Number })
   weekNumber!: number;
 
-  @ApiProperty()
+  @ApiProperty({ type: String })
   sourceBatchId!: string;
 
   @ApiProperty({
+    type: String,
     enum: optimizationRequestStatuses
   })
   status!: (typeof optimizationRequestStatuses)[number];
 
-  @ApiProperty()
+  @ApiProperty({ type: Number })
   matchedRows!: number;
 
-  @ApiProperty()
+  @ApiProperty({ type: Number })
   unmatchedRows!: number;
 
-  @ApiPropertyOptional({
-    nullable: true
-  })
+  @ApiPropertyOptional({ type: String, nullable: true })
   queuedAt!: string | null;
 
-  @ApiProperty()
+  @ApiProperty({ type: String })
   createdAt!: string;
 
-  @ApiProperty()
+  @ApiProperty({ type: String })
   updatedAt!: string;
 }
 
-export class CreateOptimizationRequestResponseDto {
+export class CreateOptimizationRequestResponseDto
+  implements CreateOptimizationRequestResponse
+{
   @ApiProperty({
     type: () => OptimizationRequestSummaryDto
   })
@@ -61,12 +67,17 @@ export class CreateOptimizationRequestResponseDto {
   unmatchedSummary!: OptimizationUnmatchedSummaryDto;
 }
 
-export class OptimizationRequestPreparationFailedResponseDto extends CreateOptimizationRequestResponseDto {
-  @ApiProperty()
+export class OptimizationRequestPreparationFailedResponseDto
+  extends CreateOptimizationRequestResponseDto
+  implements OptimizationRequestPreparationFailedResponse
+{
+  @ApiProperty({ type: String })
   message!: string;
 }
 
-export class OptimizationRequestDetailResponseDto {
+export class OptimizationRequestDetailResponseDto
+  implements OptimizationRequestDetailResponse
+{
   @ApiProperty({
     type: () => OptimizationRequestSummaryDto
   })
@@ -78,22 +89,26 @@ export class OptimizationRequestDetailResponseDto {
   payloadPreview!: OptimizationRequestPayloadDto;
 }
 
-export class OptimizationRequestRequeueResponseDto {
+export class OptimizationRequestRequeueResponseDto
+  implements OptimizationRequestRequeueResponse
+{
   @ApiProperty({
     type: () => OptimizationRequestSummaryDto
   })
   request!: OptimizationRequestSummaryDto;
 
-  @ApiProperty()
+  @ApiProperty({ type: String })
   message!: string;
 }
 
-export class OptimizationRequestRequeueRejectedResponseDto {
+export class OptimizationRequestRequeueRejectedResponseDto
+  implements OptimizationRequestRequeueRejectedResponse
+{
   @ApiProperty({
     type: () => OptimizationRequestSummaryDto
   })
   request!: OptimizationRequestSummaryDto;
 
-  @ApiProperty()
+  @ApiProperty({ type: String })
   message!: string;
 }

@@ -4,30 +4,40 @@
   "private": true,
   "packageManager": "pnpm@10.6.2+sha512.47870716bea1572b53df34ad8647b42962bc790ce2bf4562ba0f643237d7302a3d6a8ecef9e4bdfc01d23af1969aa90485d4cebb0b9638fa5ef1daef656f6c1b",
   "engines": {
-    "node": ">=22.0.0 <23.0.0",
+    "node": ">=22.0.0 <25.0.0",
     "pnpm": ">=10.0.0"
   },
   "scripts": {
-    "dev": "pnpm -r --parallel --filter \"./apps/*\" --filter \"./services/*\" --if-present dev",
-    "build": "pnpm -r --if-present build",
-    "typecheck": "pnpm -r --if-present typecheck",
-    "lint": "pnpm -r --workspace-concurrency=1 --if-present lint",
-    "test": "pnpm -r --if-present test",
-    "infra:up": "docker compose -f infra/compose/docker-compose.backend.yml up -d",
-    "infra:down": "docker compose -f infra/compose/docker-compose.backend.yml down",
-    "infra:logs": "docker compose -f infra/compose/docker-compose.backend.yml logs -f",
-    "infra:config": "docker compose -f infra/compose/docker-compose.backend.yml config"
+    "dev": "node tools/dev-workspace.mjs",
+    "dev:web-services": "pnpm -r --parallel --filter \"./apps/*\" --filter \"./services/*\" --if-present dev",
+    "dev:optimization-engine": "cd engines/optimization-engine && python -m uvicorn app.main:app --reload --host 127.0.0.1 --port 8000",
+    "dev:services": "pnpm -r --parallel --filter \"./services/*\" --if-present dev",
+    "build": "turbo run build",
+    "typecheck": "turbo run typecheck",
+    "lint": "turbo run lint",
+    "test": "turbo run test",
+    "arch:check": "node tools/architecture/check-boundaries.mjs",
+    "quality": "pnpm arch:check && pnpm typecheck && pnpm lint && pnpm test && pnpm build",
+    "infra:up": "docker compose -f infra/compose/docker-compose.backend.yml --env-file .env up -d",
+    "infra:down": "docker compose -f infra/compose/docker-compose.backend.yml --env-file .env down",
+    "bootstrap:local-admin": "node tools/bootstrap-local-admin.mjs",
+    "infra:logs": "docker compose -f infra/compose/docker-compose.backend.yml --env-file .env logs -f",
+    "infra:config": "docker compose -f infra/compose/docker-compose.backend.yml --env-file .env config",
+    "sync:service-env": "node tools/sync-local-service-env.mjs",
+    "db:migrate:production-plan": "pnpm --filter @lemnixpro/production-plan-service db:migrate",
+    "db:migrate:cut-list": "pnpm --filter @lemnixpro/cut-list-service db:migrate",
+    "db:migrate:optimization-orchestrator": "pnpm --filter @lemnixpro/optimization-orchestrator-service db:migrate"
   },
   "devDependencies": {
-    "@eslint/eslintrc": "^3.3.1",
-    "@eslint/js": "^9.22.0",
-    "eslint": "^9.22.0",
-    "eslint-config-next": "^15.2.0",
+    "@eslint/js": "^10.0.1",
+    "eslint": "^10.2.1",
+    "eslint-config-next": "^16.2.4",
     "eslint-import-resolver-typescript": "^4.3.5",
     "eslint-plugin-import": "^2.31.0",
+    "turbo": "^2.8.0",
     "tsx": "^4.19.3",
-    "typescript": "^5.8.2",
-    "typescript-eslint": "^8.26.1",
-    "vitest": "^3.0.8"
+    "typescript": "^6.0.3",
+    "typescript-eslint": "^8.59.1",
+    "vitest": "^4.1.5"
   }
 }

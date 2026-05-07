@@ -15,11 +15,11 @@ LemnixPRO uses service-owned persistence. Local development provisions a shared 
 - `production-plan-service`
   - Owns the `production_plan` schema
 - `cut-list-service`
-  - Reserved owner of the `cut_list` schema
+  - Owns the `cut_list` schema
 - `optimization-orchestrator-service`
-  - Reserved owner of the `optimization` schema
+  - Owns the `optimization` schema
 - `result-service`
-  - Reserved owner of the `result` schema
+  - Owns the `result` schema
 
 ## Rules
 

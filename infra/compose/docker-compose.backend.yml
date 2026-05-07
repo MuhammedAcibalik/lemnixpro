@@ -1,7 +1,8 @@
 services:
   postgres:
     image: postgres:16-alpine
-    container_name: lemnixpro-postgres
+    container_name: lemnixpro-postgres-primary
+    restart: unless-stopped
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-lemnixpro}
       POSTGRES_USER: ${POSTGRES_USER:-postgres}
@@ -19,7 +20,8 @@ services:
 
   rabbitmq:
     image: rabbitmq:3-management
-    container_name: lemnixpro-rabbitmq
+    container_name: lemnixpro-rabbitmq-broker
+    restart: unless-stopped
     environment:
       RABBITMQ_DEFAULT_USER: ${RABBITMQ_DEFAULT_USER:-guest}
       RABBITMQ_DEFAULT_PASS: ${RABBITMQ_DEFAULT_PASS:-guest}

@@ -1,44 +1,50 @@
 import { ApiProperty, ApiPropertyOptional } from "@nestjs/swagger";
 
+import type {
+  ProductionPlanImportBatch,
+  ProductionPlanImportBatchStatus
+} from "@lemnixpro/shared-contracts";
+
 import { productionPlanImportBatchStatuses } from "../../../infrastructure/db/schema";
 
-export class ProductionPlanImportBatchResponseDto {
-  @ApiProperty()
+export class ProductionPlanImportBatchResponseDto
+  implements ProductionPlanImportBatch
+{
+  @ApiProperty({ type: String })
   id!: string;
 
-  @ApiProperty()
+  @ApiProperty({ type: String })
   fileName!: string;
 
-  @ApiProperty()
+  @ApiProperty({ type: String })
   sheetName!: string;
 
-  @ApiPropertyOptional({
-    nullable: true
-  })
+  @ApiPropertyOptional({ type: Number, nullable: true })
+  planYear!: number | null;
+
+  @ApiPropertyOptional({ type: Number, nullable: true })
   weekNumber!: number | null;
 
   @ApiProperty({
     enum: productionPlanImportBatchStatuses
   })
-  status!: string;
+  status!: ProductionPlanImportBatchStatus;
 
-  @ApiProperty()
+  @ApiProperty({ type: Number })
   totalRowCount!: number;
 
-  @ApiProperty()
+  @ApiProperty({ type: Number })
   validRowCount!: number;
 
-  @ApiProperty()
+  @ApiProperty({ type: Number })
   invalidRowCount!: number;
 
-  @ApiPropertyOptional({
-    nullable: true
-  })
+  @ApiPropertyOptional({ type: String, nullable: true })
   activatedAt!: string | null;
 
-  @ApiProperty()
+  @ApiProperty({ type: String })
   createdAt!: string;
 
-  @ApiProperty()
+  @ApiProperty({ type: String })
   updatedAt!: string;
 }

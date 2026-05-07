@@ -1,13 +1,18 @@
 import {
   Body,
   Controller,
+  DefaultValuePipe,
+  Delete,
   Get,
   HttpCode,
+  HttpStatus,
   Inject,
   Param,
+  ParseIntPipe,
   ParseUUIDPipe,
   Patch,
   Post,
+  Query,
   UploadedFile,
   ValidationPipe,
   UseInterceptors
@@ -20,6 +25,7 @@ import {
   ApiConsumes,
   ApiCreatedResponse,
   ApiNotFoundResponse,
+  ApiResponse,
   ApiOkResponse,
   ApiOperation,
   ApiTags
@@ -29,6 +35,7 @@ import { ProductionPlanActiveBatchRowsResponseDto } from "./dto/production-plan-
 import { ProductionPlanImportBatchDetailResponseDto } from "./dto/production-plan-import-batch-detail-response.dto";
 import { ProductionPlanImportBatchResponseDto } from "./dto/production-plan-import-batch-response.dto";
 import { ProductionPlanImportRowResponseDto } from "./dto/production-plan-import-row-response.dto";
+import { ProductionPlanImportRowsPageResponseDto } from "./dto/production-plan-import-rows-page-response.dto";
 import { UpdateProductionPlanRowRequestDto } from "./dto/update-production-plan-row-request.dto";
 import { ParseProductionPlanWeekNumberPipe } from "./parse-production-plan-week-number.pipe";
 import {
@@ -107,6 +114,25 @@ export class ProductionPlanImportsController {
     return this.productionPlanImportsService.findImportById(id);
   }
 
+  @Get("production-plan-imports/:id/rows/paged")
+  @ApiOperation({
+    summary:
+      "List normalized rows for one import batch with limit/offset (max limit 500)."
+  })
+  @ApiOkResponse({ type: ProductionPlanImportRowsPageResponseDto })
+  @ApiNotFoundResponse({ description: "Production plan import batch was not found." })
+  async findRowsByBatchIdPaged(
+    @Param("id", new ParseUUIDPipe({ version: "4" })) id: string,
+    @Query("limit", new DefaultValuePipe(100), ParseIntPipe) limit: number,
+    @Query("offset", new DefaultValuePipe(0), ParseIntPipe) offset: number
+  ): Promise<ProductionPlanImportRowsPageResponseDto> {
+    return this.productionPlanImportsService.findRowsByBatchIdPaged(
+      id,
+      limit,
+      offset
+    );
+  }
+
   @Get("production-plan-imports/:id/rows")
   @ApiOperation({ summary: "List normalized rows for one production plan import batch." })
   @ApiOkResponse({ type: ProductionPlanImportRowResponseDto, isArray: true })
@@ -117,13 +143,27 @@ export class ProductionPlanImportsController {
     return this.productionPlanImportsService.findRowsByBatchId(id);
   }
 
+  @Delete("production-plan-imports/:id")
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @ApiOperation({
+    summary: "Delete one production plan import batch and all of its rows."
+  })
+  @ApiResponse({ status: HttpStatus.NO_CONTENT, description: "Batch deleted." })
+  @ApiNotFoundResponse({ description: "Production plan import batch was not found." })
+  async deleteImport(
+    @Param("id", new ParseUUIDPipe({ version: "4" })) id: string
+  ): Promise<void> {
+    return this.productionPlanImportsService.deleteImport(id);
+  }
+
   @Post("production-plan-imports/:id/activate")
   @HttpCode(200)
   @ApiOperation({ summary: "Activate one production plan import batch." })
   @ApiOkResponse({ type: ProductionPlanImportBatchResponseDto })
   @ApiNotFoundResponse({ description: "Production plan import batch was not found." })
   @ApiConflictResponse({
-    description: "Production plan import batch is not eligible for activation."
+    description:
+      "Batch cannot be activated (no valid rows, missing week on valid rows, or conflicting weeks). Row counts are reconciled from stored rows before checks; batch week may be inferred from valid rows when missing."
   })
   async activateImport(
     @Param("id", new ParseUUIDPipe({ version: "4" })) id: string

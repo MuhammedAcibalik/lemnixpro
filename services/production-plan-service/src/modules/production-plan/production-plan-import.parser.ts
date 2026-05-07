@@ -8,59 +8,103 @@ import {
   type WorkSheet
 } from "xlsx";
 
+const ORDERING_PARTY_ALIASES = [
+  "Sprş.veren",
+  "Sipş.veren",
+  "Sips.veren",
+  "Sprs.veren"
+] as const;
+
+const CUSTOMER_ORDER_NO_ALIASES = [
+  "Mştr.no.",
+  "Mşt.no.",
+  "Mstr.no."
+] as const;
+
+const CUSTOMER_ORDER_ITEM_ALIASES = [
+  "Mştr.klm.",
+  "Mşt.klm.",
+  "Mstr.klm."
+] as const;
+
+const ORDER_UNIT_ALIASES = [
+  "Sprş.ÖB",
+  "Sipş.OB",
+  "Sipş.ÖB",
+  "Sprs.OB",
+  "Sips.OB"
+] as const;
+
 const REQUIRED_HEADER_MAPPINGS = [
   { sourceHeader: "Hafta", aliases: ["Hafta"], field: "weekRaw" },
   { sourceHeader: "Ad", aliases: ["Ad"], field: "customerName" },
   {
     sourceHeader: "Sprş.veren",
-    aliases: ["Sprş.veren", "Spr?.veren"],
+    aliases: ORDERING_PARTY_ALIASES,
     field: "orderingPartyCode"
   },
   {
     sourceHeader: "Mştr.no.",
-    aliases: ["Mştr.no.", "M?tr.no."],
+    aliases: CUSTOMER_ORDER_NO_ALIASES,
     field: "customerOrderNumber"
   },
   {
     sourceHeader: "Mştr.klm.",
-    aliases: ["Mştr.klm.", "M?tr.klm."],
+    aliases: CUSTOMER_ORDER_ITEM_ALIASES,
     field: "customerOrderItemNumber"
   },
-  {
-    sourceHeader: "Sipariş",
-    aliases: ["Sipariş", "Sipari?"],
-    field: "workOrderNumber"
-  },
-  {
-    sourceHeader: "Malzeme no.",
-    aliases: ["Malzeme no."],
-    field: "materialCode"
-  },
+  { sourceHeader: "Sipariş", aliases: ["Sipariş"], field: "workOrderNumber" },
   {
     sourceHeader: "Malzeme kısa metni",
-    aliases: ["Malzeme kısa metni", "Malzeme k?sa metni"],
+    aliases: ["Malzeme kısa metni"],
+    field: "materialName"
+  },
+  {
+    sourceHeader: "Sprş.ÖB",
+    aliases: ORDER_UNIT_ALIASES,
+    field: "orderUnit"
+  },
+  { sourceHeader: "Plnl.bitiş", aliases: ["Plnl.bitiş"], field: "plannedFinishDate" },
+  { sourceHeader: "Bölüm", aliases: ["Bölüm"], field: "departmentCode" },
+  { sourceHeader: "Öncelik", aliases: ["Öncelik"], field: "priority" },
+  {
+    sourceHeader: "Sprş.veren",
+    aliases: ORDERING_PARTY_ALIASES,
+    field: "orderingPartyCode"
+  },
+  {
+    sourceHeader: "Mştr.no.",
+    aliases: CUSTOMER_ORDER_NO_ALIASES,
+    field: "customerOrderNumber"
+  },
+  {
+    sourceHeader: "Mştr.klm.",
+    aliases: CUSTOMER_ORDER_ITEM_ALIASES,
+    field: "customerOrderItemNumber"
+  },
+  { sourceHeader: "Sipariş", aliases: ["Sipariş", "Siparis"], field: "workOrderNumber" },
+  { sourceHeader: "Malzeme no.", aliases: ["Malzeme no.", "Malzeme No"], field: "materialCode" },
+  {
+    sourceHeader: "Malzeme kısa metni",
+    aliases: ["Malzeme kısa metni", "Malzeme kisa metni"],
     field: "materialName"
   },
   { sourceHeader: "Miktar", aliases: ["Miktar"], field: "quantity" },
   {
     sourceHeader: "Sprş.ÖB",
-    aliases: ["Sprş.ÖB", "Spr?.?B"],
+    aliases: ORDER_UNIT_ALIASES,
     field: "orderUnit"
   },
+  { sourceHeader: "Plnl.bitiş", aliases: ["Plnl.bitiş", "Plnl.bitis"], field: "plannedFinishDate" },
+  { sourceHeader: "Bölüm", aliases: ["Bölüm", "Bolum"], field: "departmentCode" },
+  { sourceHeader: "Öncelik", aliases: ["Öncelik", "Oncelik"], field: "priority" }
+] as const;
+
+const OPTIONAL_HEADER_MAPPINGS = [
   {
-    sourceHeader: "Plnl.bitiş",
-    aliases: ["Plnl.bitiş", "Plnl.biti?"],
-    field: "plannedFinishDate"
-  },
-  {
-    sourceHeader: "Bölüm",
-    aliases: ["Bölüm", "B?l?m"],
-    field: "departmentCode"
-  },
-  {
-    sourceHeader: "Öncelik",
-    aliases: ["Öncelik", "?ncelik"],
-    field: "priority"
+    sourceHeader: "Profil kodu",
+    aliases: ["Profil kodu", "Profil Kodu", "Ana profil kodu", "Ana Profil Kodu"],
+    field: "mainProfileCode" as const
   }
 ] as const;
 
@@ -77,11 +121,29 @@ const REQUIRED_TEXT_FIELDS = [
   "priority"
 ] as const;
 
+const DEPARTMENT_NAMES: Record<string, string> = {
+  "1": "MONTAJ",
+  "3": "HELEZON",
+  "4": "ABOARD",
+  "6": "UYUP",
+  "7": "KESİMHANE-UYUP",
+  "8": "HELEZON-OTOMASYON"
+};
+
+DEPARTMENT_NAMES["7"] = "KESİMHANE-UYUP";
+
 export const MAX_IMPORT_FILE_SIZE_BYTES = 10 * 1024 * 1024;
 export const MAX_IMPORT_DATA_ROWS = 10_000;
+/** Stored as unrestricted `text` in DB; parser rejects beyond this to contain abuse. */
+export const MAX_MATERIAL_NAME_LENGTH = 4000;
+/** Opsiyonel "Profil kodu" kolonundan (optimizasyon eşlemesi için). */
+export const MAX_MAIN_PROFILE_CODE_LENGTH = 100;
 
 type RequiredHeaderMapping = (typeof REQUIRED_HEADER_MAPPINGS)[number];
-type ProductionPlanField = RequiredHeaderMapping["field"];
+type CoreProductionPlanField = RequiredHeaderMapping["field"];
+
+export type ProductionPlanField = CoreProductionPlanField | "mainProfileCode";
+
 type RequiredTextField = (typeof REQUIRED_TEXT_FIELDS)[number];
 
 type WorksheetHeader = {
@@ -96,19 +158,7 @@ type SelectedWorksheet = {
   rangeStartColumn: number;
   rangeEndColumn: number;
   headers: WorksheetHeader[];
-  mappedColumns: Record<ProductionPlanField, number>;
-};
-
-type QuantityParseResult = {
-  value: number | null;
-  isMissing: boolean;
-  error: string | null;
-};
-
-type PlannedFinishDateParseResult = {
-  value: string | null;
-  isMissing: boolean;
-  error: string | null;
+  mappedColumns: Record<string, number>;
 };
 
 type ParsedExcelDateCode = {
@@ -117,7 +167,18 @@ type ParsedExcelDateCode = {
   d?: number;
 };
 
-export type ProductionPlanRowCandidate = Record<ProductionPlanField, unknown>;
+type ParseResult<T> = {
+  value: T | null;
+  isMissing: boolean;
+  error: string | null;
+};
+
+export type ProductionPlanRowCandidate = Record<
+  CoreProductionPlanField,
+  unknown
+> & {
+  mainProfileCode?: unknown;
+};
 
 export type NormalizedProductionPlanRow = {
   rowIndex: number;
@@ -131,11 +192,16 @@ export type NormalizedProductionPlanRow = {
   workOrderNumber: string | null;
   materialCode: string | null;
   materialName: string | null;
+  materialColor: string | null;
+  materialSize: string | null;
+  mainProfileCode: string | null;
   quantity: number | null;
   orderUnit: string | null;
   plannedFinishDate: string | null;
   departmentCode: string | null;
+  departmentName: string | null;
   priority: string | null;
+  priorityLevel: number | null;
   isValid: boolean;
   validationErrors: string[];
 };
@@ -163,7 +229,7 @@ export class ProductionPlanImportParser {
       });
     } catch {
       throw new BadRequestException(
-        `The uploaded file "${fileName}" is not a readable .xlsx workbook.`
+        `"${fileName}" okunabilir bir .xlsx üretim planı dosyası değil.`
       );
     }
 
@@ -171,26 +237,23 @@ export class ProductionPlanImportParser {
 
     if (!selectedWorksheet) {
       throw new BadRequestException(
-        "The uploaded workbook does not contain the required production plan headers."
+        "Yüklenen dosyada Üretim Planı için zorunlu kolonlar bulunamadı."
       );
     }
 
     const rows = this.parseWorksheetRows(selectedWorksheet);
 
     if (rows.length === 0) {
-      throw new BadRequestException(
-        "The uploaded worksheet does not contain any non-blank data rows."
-      );
+      throw new BadRequestException("Üretim planı dosyasında veri satırı bulunamadı.");
     }
 
     const validRowCount = rows.filter((row) => row.isValid).length;
-    const invalidRowCount = rows.length - validRowCount;
 
     return {
       sheetName: selectedWorksheet.sheetName,
       totalRowCount: rows.length,
       validRowCount,
-      invalidRowCount,
+      invalidRowCount: rows.length - validRowCount,
       rows
     };
   }
@@ -245,7 +308,7 @@ export class ProductionPlanImportParser {
     }
 
     const headers: WorksheetHeader[] = [];
-    const mappedColumns = {} as Record<ProductionPlanField, number>;
+    const mappedColumns = {} as Record<string, number>;
 
     for (let columnIndex = range.s.c; columnIndex <= range.e.c; columnIndex += 1) {
       const cell = this.getWorksheetCell(worksheet, headerRowIndex, columnIndex);
@@ -280,15 +343,30 @@ export class ProductionPlanImportParser {
       return null;
     }
 
+    for (const header of headers) {
+      const normalizedHeaderName = this.normalizeHeaderName(header.headerName);
+
+      for (const entry of OPTIONAL_HEADER_MAPPINGS) {
+        if (
+          entry.aliases.some(
+            (alias) => this.normalizeHeaderName(alias) === normalizedHeaderName
+          ) &&
+          mappedColumns[entry.field] === undefined
+        ) {
+          mappedColumns[entry.field] = header.columnIndex;
+        }
+      }
+    }
+
     return {
-      sheetName,
-      worksheet,
-      headerRowIndex,
-      rangeStartColumn: range.s.c,
-      rangeEndColumn: range.e.c,
-      headers,
-      mappedColumns
-    };
+          sheetName,
+          worksheet,
+          headerRowIndex,
+          rangeStartColumn: range.s.c,
+          rangeEndColumn: range.e.c,
+          headers,
+          mappedColumns
+        };
   }
 
   private parseWorksheetRows(
@@ -321,14 +399,17 @@ export class ProductionPlanImportParser {
 
       if (rows.length >= MAX_IMPORT_DATA_ROWS) {
         throw new BadRequestException(
-          `The uploaded worksheet exceeds the maximum of ${MAX_IMPORT_DATA_ROWS} data rows.`
+          `Üretim planı dosyası en fazla ${MAX_IMPORT_DATA_ROWS} veri satırı içerebilir.`
         );
       }
 
-      const sourceRowJson = this.buildSourceRowJson(selectedWorksheet, rowIndex);
-      const candidate = this.buildWorksheetRowCandidate(selectedWorksheet, rowIndex);
-
-      rows.push(this.normalizeRow(candidate, sourceRowJson, rowIndex + 1));
+      rows.push(
+        this.normalizeRow(
+          this.buildWorksheetRowCandidate(selectedWorksheet, rowIndex),
+          this.buildSourceRowJson(selectedWorksheet, rowIndex),
+          rowIndex + 1
+        )
+      );
     }
 
     return rows;
@@ -339,72 +420,67 @@ export class ProductionPlanImportParser {
     rowIndex: number
   ): ProductionPlanRowCandidate {
     return {
-      weekRaw: this.getWorksheetCell(
-        selectedWorksheet.worksheet,
+      weekRaw: this.readMappedCell(selectedWorksheet, rowIndex, "weekRaw"),
+      customerName: this.readMappedCell(selectedWorksheet, rowIndex, "customerName"),
+      orderingPartyCode: this.readMappedCell(
+        selectedWorksheet,
         rowIndex,
-        selectedWorksheet.mappedColumns.weekRaw
+        "orderingPartyCode"
       ),
-      customerName: this.getWorksheetCell(
-        selectedWorksheet.worksheet,
+      customerOrderNumber: this.readMappedCell(
+        selectedWorksheet,
         rowIndex,
-        selectedWorksheet.mappedColumns.customerName
+        "customerOrderNumber"
       ),
-      orderingPartyCode: this.getWorksheetCell(
-        selectedWorksheet.worksheet,
+      customerOrderItemNumber: this.readMappedCell(
+        selectedWorksheet,
         rowIndex,
-        selectedWorksheet.mappedColumns.orderingPartyCode
+        "customerOrderItemNumber"
       ),
-      customerOrderNumber: this.getWorksheetCell(
-        selectedWorksheet.worksheet,
+      workOrderNumber: this.readMappedCell(
+        selectedWorksheet,
         rowIndex,
-        selectedWorksheet.mappedColumns.customerOrderNumber
+        "workOrderNumber"
       ),
-      customerOrderItemNumber: this.getWorksheetCell(
-        selectedWorksheet.worksheet,
+      materialCode: this.readMappedCell(selectedWorksheet, rowIndex, "materialCode"),
+      materialName: this.readMappedCell(selectedWorksheet, rowIndex, "materialName"),
+      quantity: this.readMappedCell(selectedWorksheet, rowIndex, "quantity"),
+      orderUnit: this.readMappedCell(selectedWorksheet, rowIndex, "orderUnit"),
+      plannedFinishDate: this.readMappedCell(
+        selectedWorksheet,
         rowIndex,
-        selectedWorksheet.mappedColumns.customerOrderItemNumber
+        "plannedFinishDate"
       ),
-      workOrderNumber: this.getWorksheetCell(
-        selectedWorksheet.worksheet,
+      departmentCode: this.readMappedCell(
+        selectedWorksheet,
         rowIndex,
-        selectedWorksheet.mappedColumns.workOrderNumber
+        "departmentCode"
       ),
-      materialCode: this.getWorksheetCell(
-        selectedWorksheet.worksheet,
+      priority: this.readMappedCell(selectedWorksheet, rowIndex, "priority"),
+      mainProfileCode: this.readMappedCell(
+        selectedWorksheet,
         rowIndex,
-        selectedWorksheet.mappedColumns.materialCode
-      ),
-      materialName: this.getWorksheetCell(
-        selectedWorksheet.worksheet,
-        rowIndex,
-        selectedWorksheet.mappedColumns.materialName
-      ),
-      quantity: this.getWorksheetCell(
-        selectedWorksheet.worksheet,
-        rowIndex,
-        selectedWorksheet.mappedColumns.quantity
-      ),
-      orderUnit: this.getWorksheetCell(
-        selectedWorksheet.worksheet,
-        rowIndex,
-        selectedWorksheet.mappedColumns.orderUnit
-      ),
-      plannedFinishDate: this.getWorksheetCell(
-        selectedWorksheet.worksheet,
-        rowIndex,
-        selectedWorksheet.mappedColumns.plannedFinishDate
-      ),
-      departmentCode: this.getWorksheetCell(
-        selectedWorksheet.worksheet,
-        rowIndex,
-        selectedWorksheet.mappedColumns.departmentCode
-      ),
-      priority: this.getWorksheetCell(
-        selectedWorksheet.worksheet,
-        rowIndex,
-        selectedWorksheet.mappedColumns.priority
+        "mainProfileCode"
       )
     };
+  }
+
+  private readMappedCell(
+    selectedWorksheet: SelectedWorksheet,
+    rowIndex: number,
+    field: CoreProductionPlanField | "mainProfileCode"
+  ): CellObject | undefined {
+    const columnIndex = selectedWorksheet.mappedColumns[field];
+
+    if (columnIndex === undefined) {
+      return undefined;
+    }
+
+    return this.getWorksheetCell(
+      selectedWorksheet.worksheet,
+      rowIndex,
+      columnIndex
+    );
   }
 
   private buildSourceRowJson(
@@ -432,7 +508,7 @@ export class ProductionPlanImportParser {
     rowIndex: number
   ): NormalizedProductionPlanRow {
     const weekRaw = this.normalizeTextValue(candidate.weekRaw);
-    const weekNumber = this.parseWeekNumber(weekRaw);
+    const weekNumber = this.parseInteger(weekRaw);
     const customerName = this.normalizeTextValue(candidate.customerName);
     const orderingPartyCode = this.normalizeTextValue(candidate.orderingPartyCode);
     const customerOrderNumber = this.normalizeTextValue(
@@ -444,19 +520,26 @@ export class ProductionPlanImportParser {
     const workOrderNumber = this.normalizeTextValue(candidate.workOrderNumber);
     const materialCode = this.normalizeTextValue(candidate.materialCode);
     const materialName = this.normalizeTextValue(candidate.materialName);
+    const mainProfileCodeRaw =
+      candidate.mainProfileCode !== undefined &&
+      candidate.mainProfileCode !== null
+        ? this.normalizeTextValue(candidate.mainProfileCode)
+        : null;
     const quantityResult = this.parseQuantity(candidate.quantity);
     const orderUnit = this.normalizeTextValue(candidate.orderUnit);
     const plannedFinishDateResult = this.parsePlannedFinishDate(
       candidate.plannedFinishDate
     );
     const departmentCode = this.normalizeTextValue(candidate.departmentCode);
+    const departmentName = this.resolveDepartmentName(departmentCode);
     const priority = this.normalizeTextValue(candidate.priority);
+    const priorityLevel = this.parseInteger(priority);
     const validationErrors: string[] = [];
 
     if (!weekRaw) {
-      validationErrors.push("weekRaw is required.");
+      validationErrors.push("Hafta zorunludur.");
     } else if (weekNumber === null) {
-      validationErrors.push("weekRaw must contain an integer week value.");
+      validationErrors.push("Hafta tam sayı olmalıdır.");
     }
 
     const requiredTextValues: Record<RequiredTextField, string | null> = {
@@ -474,17 +557,45 @@ export class ProductionPlanImportParser {
 
     for (const field of REQUIRED_TEXT_FIELDS) {
       if (!requiredTextValues[field]) {
-        validationErrors.push(`${field} is required.`);
+        validationErrors.push(`${field} zorunludur.`);
       }
     }
 
+    if (departmentCode && departmentName === null) {
+      validationErrors.push(`Bölüm kodu "${departmentCode}" desteklenmiyor.`);
+    }
+
+    if (priority && priorityLevel === null) {
+      validationErrors.push("Öncelik tam sayı olmalıdır.");
+    }
+
+    if (
+      materialName !== null &&
+      materialName.length > MAX_MATERIAL_NAME_LENGTH
+    ) {
+      validationErrors.push(
+        `Malzeme kısa metni en fazla ${MAX_MATERIAL_NAME_LENGTH} karakter olabilir.`
+      );
+    }
+
+    if (
+      mainProfileCodeRaw !== null &&
+      mainProfileCodeRaw.length > MAX_MAIN_PROFILE_CODE_LENGTH
+    ) {
+      validationErrors.push(
+        `Profil kodu en fazla ${MAX_MAIN_PROFILE_CODE_LENGTH} karakter olabilir.`
+      );
+    }
+
     if (quantityResult.isMissing) {
-      validationErrors.push("quantity is required.");
+      validationErrors.push("Miktar zorunludur.");
     } else if (quantityResult.error) {
       validationErrors.push(quantityResult.error);
     }
 
-    if (!plannedFinishDateResult.isMissing && plannedFinishDateResult.error) {
+    if (plannedFinishDateResult.isMissing) {
+      validationErrors.push("Plnl.bitis zorunludur.");
+    } else if (plannedFinishDateResult.error) {
       validationErrors.push(plannedFinishDateResult.error);
     }
 
@@ -500,43 +611,38 @@ export class ProductionPlanImportParser {
       workOrderNumber,
       materialCode,
       materialName,
+      materialColor: this.extractMaterialColor(materialName),
+      materialSize:
+        this.extractMaterialSize(materialName) ??
+        this.extractMaterialSizeFromMaterialCode(materialCode),
+      mainProfileCode:
+        mainProfileCodeRaw !== null &&
+        mainProfileCodeRaw.length <= MAX_MAIN_PROFILE_CODE_LENGTH
+          ? mainProfileCodeRaw.trim().toUpperCase()
+          : null,
       quantity: quantityResult.value,
       orderUnit,
       plannedFinishDate: plannedFinishDateResult.value,
       departmentCode,
+      departmentName,
       priority,
+      priorityLevel,
       isValid: validationErrors.length === 0,
       validationErrors
     };
   }
 
-  private parseWeekNumber(weekRaw: string | null): number | null {
-    if (!weekRaw || !/^-?\d+$/.test(weekRaw)) {
+  private parseInteger(value: string | null): number | null {
+    if (!value || !/^-?\d+$/.test(value)) {
       return null;
     }
 
-    const parsedWeekNumber = Number(weekRaw);
+    const parsedValue = Number(value);
 
-    return Number.isInteger(parsedWeekNumber) ? parsedWeekNumber : null;
+    return Number.isInteger(parsedValue) ? parsedValue : null;
   }
 
-  private parseQuantity(value: unknown): QuantityParseResult {
-    if (value === null || value === undefined) {
-      return {
-        value: null,
-        isMissing: true,
-        error: null
-      };
-    }
-
-    if (this.isCellObject(value) && typeof value.v === "number") {
-      return this.finalizeQuantity(value.v);
-    }
-
-    if (typeof value === "number") {
-      return this.finalizeQuantity(value);
-    }
-
+  private parseQuantity(value: unknown): ParseResult<number> {
     const rawText = this.normalizeTextValue(value);
 
     if (!rawText) {
@@ -547,68 +653,39 @@ export class ProductionPlanImportParser {
       };
     }
 
-    const compactText = rawText.replace(/\s+/g, "");
-    const commaCount = this.countOccurrences(compactText, ",");
-    const dotCount = this.countOccurrences(compactText, ".");
-    let normalizedNumericText = compactText;
+    const quantityNumericText = this.normalizeNumericText(
+      this.stripTrailingQuantityUnit(rawText)
+    );
+    const parsedValue = Number(quantityNumericText);
 
-    if (commaCount > 0 && dotCount > 0) {
-      const lastCommaIndex = compactText.lastIndexOf(",");
-      const lastDotIndex = compactText.lastIndexOf(".");
-      const decimalSeparator = lastCommaIndex > lastDotIndex ? "," : ".";
-      const groupingSeparator = decimalSeparator === "," ? "." : ",";
-
-      normalizedNumericText = compactText.split(groupingSeparator).join("");
-      normalizedNumericText =
-        decimalSeparator === ","
-          ? normalizedNumericText.replace(",", ".")
-          : normalizedNumericText;
-    } else if (commaCount > 0) {
-      if (commaCount > 1) {
-        return {
-          value: null,
-          isMissing: false,
-          error: "quantity must be a positive number."
-        };
-      }
-
-      normalizedNumericText = compactText.replace(",", ".");
-    } else if (dotCount > 1) {
+    if (!Number.isFinite(parsedValue) || parsedValue <= 0) {
       return {
         value: null,
         isMissing: false,
-        error: "quantity must be a positive number."
-      };
-    }
-
-    if (!/^[+-]?\d+(\.\d+)?$/.test(normalizedNumericText)) {
-      return {
-        value: null,
-        isMissing: false,
-        error: "quantity must be a positive number."
-      };
-    }
-
-    return this.finalizeQuantity(Number(normalizedNumericText));
-  }
-
-  private finalizeQuantity(quantity: number): QuantityParseResult {
-    if (!Number.isFinite(quantity) || quantity <= 0) {
-      return {
-        value: null,
-        isMissing: false,
-        error: "quantity must be a positive number."
+        error: "Miktar pozitif sayı olmalıdır."
       };
     }
 
     return {
-      value: Number(quantity.toFixed(3)),
+      value: Number(parsedValue.toFixed(3)),
       isMissing: false,
       error: null
     };
   }
 
-  private parsePlannedFinishDate(value: unknown): PlannedFinishDateParseResult {
+  /**
+   * Excel exports often append the unit in the quantity cell (e.g. "304 ADT").
+   */
+  private stripTrailingQuantityUnit(rawText: string): string {
+    return rawText
+      .replace(
+        /\s+(?:ADT|ADET|adet|Adet|PCE|PCS|pcs|pc|PC|ST|STK|kg|KG|MT|mt)\s*$/iu,
+        ""
+      )
+      .trim();
+  }
+
+  private parsePlannedFinishDate(value: unknown): ParseResult<string> {
     if (value === null || value === undefined) {
       return {
         value: null,
@@ -653,44 +730,51 @@ export class ProductionPlanImportParser {
       };
     }
 
-    const dottedDateMatch = rawText.match(/^(\d{2})\.(\d{2})\.(\d{4})$/);
+    const dmyMatch = rawText.match(
+      /^(\d{1,2})[./](\d{1,2})[./](\d{4})$/
+    );
+    const isoMatch = rawText.match(/^(\d{4})-(\d{2})-(\d{2})/);
 
-    if (dottedDateMatch) {
+    if (isoMatch) {
       return this.parseDateParts(
-        Number(dottedDateMatch[3]),
-        Number(dottedDateMatch[2]),
-        Number(dottedDateMatch[1])
+        Number(isoMatch[1]),
+        Number(isoMatch[2]),
+        Number(isoMatch[3])
       );
     }
 
-    const slashedDateMatch = rawText.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
-
-    if (slashedDateMatch) {
+    if (dmyMatch) {
       return this.parseDateParts(
-        Number(slashedDateMatch[3]),
-        Number(slashedDateMatch[2]),
-        Number(slashedDateMatch[1])
-      );
-    }
-
-    const isoLikeDateMatch = rawText.match(/^(\d{4})-(\d{2})-(\d{2})/);
-
-    if (isoLikeDateMatch) {
-      return this.parseDateParts(
-        Number(isoLikeDateMatch[1]),
-        Number(isoLikeDateMatch[2]),
-        Number(isoLikeDateMatch[3])
+        Number(dmyMatch[3]),
+        Number(dmyMatch[2]),
+        Number(dmyMatch[1])
       );
     }
 
     return {
       value: null,
       isMissing: false,
-      error: "plannedFinishDate must be a valid date."
+      error: "Plnl.bitiş geçerli bir tarih olmalıdır."
     };
   }
 
-  private parseExcelSerialDate(serialValue: number): PlannedFinishDateParseResult {
+  private normalizeNumericText(value: string): string {
+    const compactValue = value.replace(/\s+/g, "");
+    const hasComma = compactValue.includes(",");
+    const dotCount = compactValue.split(".").length - 1;
+
+    if (hasComma) {
+      return compactValue.replace(/\./g, "").replace(",", ".");
+    }
+
+    if (dotCount > 1) {
+      return compactValue.replace(/\./g, "");
+    }
+
+    return compactValue;
+  }
+
+  private parseExcelSerialDate(serialValue: number): ParseResult<string> {
     const parsedDateCode = (
       SSF as {
         parse_date_code(value: number): ParsedExcelDateCode | null;
@@ -701,7 +785,7 @@ export class ProductionPlanImportParser {
       return {
         value: null,
         isMissing: false,
-        error: "plannedFinishDate must be a valid date."
+        error: "Plnl.bitiş geçerli bir tarih olmalıdır."
       };
     }
 
@@ -712,7 +796,7 @@ export class ProductionPlanImportParser {
     year: number,
     month: number,
     day: number
-  ): PlannedFinishDateParseResult {
+  ): ParseResult<string> {
     const candidateDate = new Date(Date.UTC(year, month - 1, day));
 
     if (
@@ -724,7 +808,7 @@ export class ProductionPlanImportParser {
       return {
         value: null,
         isMissing: false,
-        error: "plannedFinishDate must be a valid date."
+        error: "Plnl.bitiş geçerli bir tarih olmalıdır."
       };
     }
 
@@ -741,6 +825,100 @@ export class ProductionPlanImportParser {
     const day = `${value.getUTCDate()}`.padStart(2, "0");
 
     return `${year}-${month}-${day}`;
+  }
+
+  private resolveDepartmentName(departmentCode: string | null): string | null {
+    if (!departmentCode) {
+      return null;
+    }
+
+    return DEPARTMENT_NAMES[departmentCode.trim()] ?? null;
+  }
+
+  private extractMaterialColor(materialName: string | null): string | null {
+    if (!materialName) {
+      return null;
+    }
+
+    const colorMatch = materialName.toUpperCase().match(/\b(?:RAL|R)\s*(\d{4})\b/);
+
+    return colorMatch?.[1] ? `RAL${colorMatch[1]}` : null;
+  }
+
+  /**
+   * ISO paper / foil series markers (A0–A4, B0–B2, F0–F2) plus fixed inch literals.
+   * SAP material short text often concatenates digits with the series, e.g. "205A4X2000"
+   * where word-boundary-based matching would miss "A4".
+   */
+  private extractMaterialSize(materialName: string | null): string | null {
+    if (!materialName) {
+      return null;
+    }
+
+    const textOutsideParentheses = materialName
+      .toUpperCase()
+      .replace(/\([^)]*\)/g, " ");
+
+    const seriesSizeMatch = textOutsideParentheses.match(
+      /\b(A[0-4]|B[0-2]|F[0-2])\b/
+    );
+
+    if (seriesSizeMatch?.[1]) {
+      return seriesSizeMatch[1];
+    }
+
+    const gluedSeriesMatch = textOutsideParentheses.match(
+      /\d(A[0-4]|B[0-2]|F[0-2])(?![0-9])/
+    );
+
+    if (gluedSeriesMatch?.[1]) {
+      return gluedSeriesMatch[1];
+    }
+
+    const inchSizeMatch = textOutsideParentheses.match(
+      /(^|[^A-Z0-9])(\d{1,3})\s*"\s*X\s*(\d{1,3})\s*"(?=$|[^A-Z0-9])/
+    );
+
+    if (inchSizeMatch?.[2] && inchSizeMatch[3]) {
+      return `${inchSizeMatch[2]}"X${inchSizeMatch[3]}"`;
+    }
+
+    const metricSizeMatch = textOutsideParentheses.match(
+      /(^|[^A-Z0-9])(\d{2,5})\s*X\s*(\d{2,5})\s*(MM)?(?=$|[^A-Z0-9])/
+    );
+
+    if (metricSizeMatch?.[2] && metricSizeMatch[3]) {
+      return `${metricSizeMatch[2]}X${metricSizeMatch[3]}${metricSizeMatch[4] ?? ""}`;
+    }
+
+    const lengthMatch = textOutsideParentheses.match(
+      /(^|[^A-Z0-9])(\d{3,5})\s*MM(?=$|[^A-Z0-9])/
+    );
+
+    return lengthMatch?.[2] ? `${lengthMatch[2]}MM` : null;
+  }
+
+  /**
+   * Fallback when size is not present in the short text but is embedded in the SAP-style
+   * material number (e.g. UMBSG205A4X2000).
+   */
+  private extractMaterialSizeFromMaterialCode(materialCode: string | null): string | null {
+    if (!materialCode) {
+      return null;
+    }
+
+    const upper = this.normalizeTextValue(materialCode);
+
+    if (!upper) {
+      return null;
+    }
+
+    const compact = upper.replace(/\u00A0/g, " ").trim().toUpperCase();
+    const gluedSeriesMatch = compact.match(
+      /\d(A[0-4]|B[0-2]|F[0-2])(?![0-9])/
+    );
+
+    return gluedSeriesMatch?.[1] ?? null;
   }
 
   private normalizeTextValue(value: unknown): string | null {
@@ -849,11 +1027,12 @@ export class ProductionPlanImportParser {
   }
 
   private normalizeHeaderName(value: string): string {
-    return value.replace(/\s+/g, " ").trim();
-  }
-
-  private countOccurrences(value: string, target: string): number {
-    return value.split(target).length - 1;
+    return value
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .replace(/\s+/g, " ")
+      .trim()
+      .toLocaleLowerCase("tr-TR");
   }
 
   private isCellObject(value: unknown): value is CellObject {

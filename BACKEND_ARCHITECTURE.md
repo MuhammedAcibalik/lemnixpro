@@ -17,18 +17,18 @@ This is the active architecture direction for LemnixPRO. Earlier modular-monolit
 - `identity-service`: identity and authentication boundary
 - `master-data-service`: main profile master data boundary
 - `production-plan-service`: weekly production plan import boundary
+- `cut-list-service`: cut list snapshot boundary
+- `optimization-orchestrator-service`: optimization request orchestration and queue handoff boundary
+- `result-service`: optimization result event ingestion and retrieval boundary
 
 ## Supporting Platform Boundaries
 
 - `apps/web`: internal user interface shell
 - `api-gateway-service`: browser-facing HTTP and routing boundary
 
-## Planned or Reserved Slices
+## Planned or Evolving Slices
 
-- `cut-list-service`: cut list management boundary
-- `optimization-orchestrator-service`: optimization request orchestration and async workflow boundary
-- `result-service`: optimization output persistence and retrieval boundary
-- `engines/optimization-engine`: Python execution boundary for OR-Tools optimization jobs
+- `engines/optimization-engine`: Python execution boundary for OR-Tools optimization jobs; the queue worker and result event path are present, while the optimization model remains evolving.
 
 ## Architecture Rules
 

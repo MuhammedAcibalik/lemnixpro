@@ -17,6 +17,12 @@
     "incremental": true,
     "baseUrl": ".",
     "paths": {
+      "@lemnixpro/shared-contracts": [
+        "../../packages/shared-contracts/src/index.ts"
+      ],
+      "@lemnixpro/shared-types": [
+        "../../packages/shared-types/src/index.ts"
+      ],
       "@/*": [
         "./src/*"
       ]

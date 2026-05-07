@@ -16,6 +16,14 @@ class SharedContractModel(BaseModel):
     )
 
 
+class MessageMetadata(SharedContractModel):
+    message_id: str
+    correlation_id: str
+    causation_id: str | None = None
+    attempt: int
+    occurred_at: str
+
+
 class OptimizationMainProfileInput(SharedContractModel):
     id: str
     code: str
@@ -64,6 +72,7 @@ class OptimizationRequestPayload(SharedContractModel):
 
 
 class OptimizationQueueEnvelope(SharedContractModel):
+    metadata: MessageMetadata
     request_id: str
     week_number: int
     source_batch_id: str

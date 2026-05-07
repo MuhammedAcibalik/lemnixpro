@@ -25,6 +25,7 @@ type ProductionPlanImportBatchResponse = {
   id: string;
   fileName: string;
   sheetName: string;
+  planYear: number | null;
   weekNumber: number | null;
   status: BatchStatus;
   totalRowCount: number;
@@ -49,11 +50,16 @@ type ProductionPlanImportRowResponse = {
   workOrderNumber: string | null;
   materialCode: string | null;
   materialName: string | null;
+  materialColor: string | null;
+  materialSize: string | null;
+  mainProfileCode: string | null;
   quantity: number | null;
   orderUnit: string | null;
   plannedFinishDate: string | null;
   departmentCode: string | null;
+  departmentName: string | null;
   priority: string | null;
+  priorityLevel: number | null;
   isValid: boolean;
   validationErrors: string[];
   createdAt: string;
@@ -72,11 +78,16 @@ type ProductionPlanActiveBatchRowResponse = {
   workOrderNumber: string | null;
   materialCode: string | null;
   materialName: string | null;
+  materialColor: string | null;
+  materialSize: string | null;
+  mainProfileCode: string | null;
   quantity: number | null;
   orderUnit: string | null;
   plannedFinishDate: string | null;
   departmentCode: string | null;
+  departmentName: string | null;
   priority: string | null;
+  priorityLevel: number | null;
   isValid: boolean;
   validationErrors: string[];
 };
@@ -90,6 +101,7 @@ type ProductionPlanImportBatchRow = {
   id: string;
   file_name: string;
   sheet_name: string;
+  plan_year?: number | null;
   week_number: number | null;
   status: BatchStatus;
   total_row_count: number;
@@ -114,11 +126,16 @@ type ProductionPlanRowRecord = {
   work_order_number: string | null;
   material_code: string | null;
   material_name: string | null;
+  material_color: string | null;
+  material_size: string | null;
+  main_profile_code: string | null;
   quantity: number | string | null;
   order_unit: string | null;
   planned_finish_date: string | Date | null;
   department_code: string | null;
+  department_name: string | null;
   priority: string | null;
+  priority_level: number | null;
   is_valid: boolean;
   validation_errors: string[] | string;
   created_at: string | Date;
@@ -130,20 +147,27 @@ type RepositoryErrorClasses = {
     batchId: string
   ) => Error;
   ProductionPlanImportBatchNotActivatableError: new (
-    batchId: string
+    batchId: string,
+    reason:
+      | "no_valid_rows"
+      | "missing_week"
+      | "conflicting_weeks"
   ) => Error;
 };
 
 type ProductionPlanImportsRepositoryShape = Pick<
   ProductionPlanImportsRepository,
   | "activateBatchById"
+  | "countRowsByBatchId"
   | "createImportBatch"
+  | "deleteBatchById"
   | "findActiveBatchRowsByWeekNumber"
   | "findActiveBatchByWeekNumber"
   | "findImportBatches"
   | "findImportBatchesByWeekNumber"
   | "findImportBatchById"
   | "findRowsByBatchId"
+  | "findRowsByBatchIdPage"
   | "findRowById"
   | "updateRowAndRefreshBatchSummary"
 >;
@@ -358,8 +382,8 @@ describe("production-plan-service imports", () => {
       plannedFinishDate: null,
       isValid: false,
       validationErrors: [
-        "quantity must be a positive number.",
-        "plannedFinishDate must be a valid date."
+        "Miktar pozitif sayı olmalıdır.",
+        "Plnl.bitiş geçerli bir tarih olmalıdır."
       ]
     });
 
@@ -420,9 +444,7 @@ describe("production-plan-service imports", () => {
       });
     expect(response.status).toBe(400);
 
-    expect(response.body.message).toContain(
-      "required production plan headers"
-    );
+    expect(response.body.message).toContain("zorunlu kolonlar");
   });
 
   it("uses the first worksheet whose first non-empty row contains the required headers", async () => {
@@ -451,6 +473,138 @@ describe("production-plan-service imports", () => {
     expect(createdBatch.activatedAt).toBeNull();
   });
 
+  it("accepts SAP-style header spellings and quantity cells that include a unit suffix", async () => {
+    const httpServer = app.getHttpServer() as Parameters<typeof request>[0];
+    const workbookBuffer = createWorkbookBuffer({
+      "Kesimhane Plan": [
+        buildScreenshotStyleHeaders(),
+        [
+          "1",
+          "HL DISPLAY SRL",
+          "3003429",
+          "110102534",
+          "130",
+          "2358160",
+          "UYUP01265X5001",
+          "30X70 NOVEL STAND 1850 MM",
+          "304 ADT",
+          "ADT",
+          "2.01.2026",
+          "1",
+          "2"
+        ]
+      ]
+    });
+
+    const response = await request(httpServer)
+      .post("/production-plan-imports")
+      .attach("file", workbookBuffer, {
+        filename: "Kesimhane_Uretim_Plani_1_Hafta.xlsx",
+        contentType:
+          "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+      })
+      .expect(201);
+    const createdBatch = response.body as ProductionPlanImportBatchResponse;
+
+    expect(createdBatch.weekNumber).toBe(1);
+    expect(createdBatch.totalRowCount).toBe(1);
+    expect(createdBatch.validRowCount).toBe(1);
+
+    const rowsResponse = await request(httpServer)
+      .get(`/production-plan-imports/${createdBatch.id}/rows`)
+      .expect(200);
+    const rows = rowsResponse.body as ProductionPlanImportRowResponse[];
+
+    expect(rows[0]).toMatchObject({
+      customerName: "HL DISPLAY SRL",
+      orderingPartyCode: "3003429",
+      customerOrderNumber: "110102534",
+      customerOrderItemNumber: "130",
+      workOrderNumber: "2358160",
+      materialCode: "UYUP01265X5001",
+      materialName: "30X70 NOVEL STAND 1850 MM",
+      quantity: 304,
+      orderUnit: "ADT",
+      plannedFinishDate: "2026-01-02",
+      departmentCode: "1",
+      departmentName: "MONTAJ",
+      priorityLevel: 2,
+      isValid: true
+    });
+  });
+
+  it("uses ISO week-year for week 1 plans that span calendar years", async () => {
+    const httpServer = app.getHttpServer() as Parameters<typeof request>[0];
+    const workbookBuffer = createWorkbookBuffer({
+      "Weekly Plan": [
+        buildRequiredHeaders(),
+        buildProductionPlanRow({
+          week: "1",
+          customerOrderNumber: "2026-W01-A",
+          workOrderNumber: "WO-2026-W01-A",
+          plannedFinishDate: "31.12.2025"
+        }),
+        buildProductionPlanRow({
+          week: "1",
+          customerOrderNumber: "2026-W01-B",
+          workOrderNumber: "WO-2026-W01-B",
+          plannedFinishDate: "01.01.2026"
+        })
+      ]
+    });
+
+    const response = await request(httpServer)
+      .post("/production-plan-imports")
+      .attach("file", workbookBuffer, {
+        filename: "Kesimhane_Uretim_Plani_1_Hafta.xlsx",
+        contentType:
+          "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+      })
+      .expect(201);
+    const createdBatch = response.body as ProductionPlanImportBatchResponse;
+
+    expect(createdBatch.weekNumber).toBe(1);
+    expect(createdBatch.planYear).toBe(2026);
+    expect(createdBatch.validRowCount).toBe(2);
+  });
+
+  it("returns paged rows with total count for one batch", async () => {
+    const httpServer = app.getHttpServer() as Parameters<typeof request>[0];
+    const dataRows = Array.from({ length: 5 }, (_, index) =>
+      buildProductionPlanRow({
+        customerOrderNumber: `${200000 + index}`,
+        workOrderNumber: `WO-PAGE-${index}`
+      })
+    );
+    const workbookBuffer = createWorkbookBuffer({
+      "Weekly Plan": [buildRequiredHeaders(), ...dataRows]
+    });
+
+    const createResponse = await request(httpServer)
+      .post("/production-plan-imports")
+      .attach("file", workbookBuffer, {
+        filename: "paged-rows.xlsx",
+        contentType:
+          "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+      })
+      .expect(201);
+    const batch = createResponse.body as ProductionPlanImportBatchResponse;
+
+    const page1 = await request(httpServer)
+      .get(`/production-plan-imports/${batch.id}/rows/paged?limit=2&offset=0`)
+      .expect(200);
+
+    expect(page1.body.totalCount).toBe(5);
+    expect(page1.body.rows).toHaveLength(2);
+    expect(page1.body.limit).toBe(2);
+    expect(page1.body.offset).toBe(0);
+
+    const lastPage = await request(httpServer)
+      .get(`/production-plan-imports/${batch.id}/rows/paged?limit=2&offset=4`)
+      .expect(200);
+    expect(lastPage.body.rows).toHaveLength(1);
+  });
+
   it("rejects uploads that exceed the maximum non-blank data row limit", async () => {
     const httpServer = app.getHttpServer() as Parameters<typeof request>[0];
     const rows = [buildRequiredHeaders()];
@@ -477,7 +631,7 @@ describe("production-plan-service imports", () => {
       })
       .expect(400);
 
-    expect(response.body.message).toContain("maximum of 10000 data rows");
+    expect(response.body.message).toContain("en fazla 10000 veri satırı");
   });
 
   it("rejects imports with conflicting resolved week numbers", async () => {
@@ -947,6 +1101,34 @@ describe("production-plan-service imports", () => {
       .expect(404);
   });
 
+  it("infers batch week from valid rows when batch week_number was unset", async () => {
+    const httpServer = app.getHttpServer() as Parameters<typeof request>[0];
+    const created = await createImport(
+      httpServer,
+      {
+        "Weekly Plan": [buildRequiredHeaders(), buildProductionPlanRow()]
+      },
+      "week-infer-on-activate.xlsx"
+    );
+
+    expect(created.weekNumber).toBe(12);
+
+    await memoryPool.query(
+      `update production_plan.production_plan_import_batches
+       set week_number = null
+       where id = $1`,
+      [created.id]
+    );
+
+    const response = await request(httpServer)
+      .post(`/production-plan-imports/${created.id}/activate`)
+      .expect(200);
+
+    const activated = response.body as ProductionPlanImportBatchResponse;
+    expect(activated.status).toBe("active");
+    expect(activated.weekNumber).toBe(12);
+  });
+
   it("rejects invalid week route parameters on week-based endpoints", async () => {
     const httpServer = app.getHttpServer() as Parameters<typeof request>[0];
 
@@ -1061,6 +1243,32 @@ describe("production-plan-service imports", () => {
       validationErrors: []
     });
   });
+
+  it("deletes an import batch and returns 404 on subsequent read", async () => {
+    const httpServer = app.getHttpServer() as Parameters<typeof request>[0];
+    const createdBatch = await createImport(
+      httpServer,
+      {
+        "Weekly Plan": [buildRequiredHeaders(), buildProductionPlanRow()]
+      },
+      "delete-me.xlsx"
+    );
+
+    await request(httpServer)
+      .delete(`/production-plan-imports/${createdBatch.id}`)
+      .expect(204);
+
+    await request(httpServer)
+      .get(`/production-plan-imports/${createdBatch.id}`)
+      .expect(404);
+
+    const listResponse = await request(httpServer)
+      .get("/production-plan-imports")
+      .expect(200);
+    const listed = listResponse.body as ProductionPlanImportBatchResponse[];
+
+    expect(listed.find((b) => b.id === createdBatch.id)).toBeUndefined();
+  });
 });
 
 async function createImport(
@@ -1102,6 +1310,7 @@ async function createDatabaseSchema(memoryPool: QueryablePool): Promise<void> {
       id uuid primary key,
       file_name varchar(255) not null,
       sheet_name varchar(255) not null,
+      plan_year integer,
       week_number integer,
       status varchar(40) not null,
       total_row_count integer not null,
@@ -1126,12 +1335,16 @@ async function createDatabaseSchema(memoryPool: QueryablePool): Promise<void> {
       customer_order_item_number varchar(100),
       work_order_number varchar(100),
       material_code varchar(100),
-      material_name varchar(255),
+      material_name text,
+      material_color varchar(40),
+      material_size varchar(20),
       quantity numeric(18, 3),
       order_unit varchar(50),
       planned_finish_date date,
       department_code varchar(100),
+      department_name varchar(100),
       priority varchar(100),
+      priority_level integer,
       is_valid boolean not null,
       validation_errors jsonb not null default '[]'::jsonb,
       created_at timestamptz not null,
@@ -1170,13 +1383,14 @@ function createRepositoryDouble(
       const createdAt = nextTimestamp();
       const result = await memoryPool.query(
         `insert into production_plan.production_plan_import_batches
-          (id, file_name, sheet_name, week_number, status, total_row_count, valid_row_count, invalid_row_count, activated_at, created_at, updated_at)
+          (id, file_name, sheet_name, plan_year, week_number, status, total_row_count, valid_row_count, invalid_row_count, activated_at, created_at, updated_at)
         values
-          ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+          ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
         returning
           id,
           file_name,
           sheet_name,
+          plan_year,
           week_number,
           status,
           total_row_count,
@@ -1189,6 +1403,7 @@ function createRepositoryDouble(
           batchId,
           input.fileName,
           input.sheetName,
+          input.planYear,
           input.weekNumber,
           input.status,
           input.totalRowCount,
@@ -1213,13 +1428,15 @@ function createRepositoryDouble(
           `insert into production_plan.production_plan_rows
             (id, batch_id, row_index, source_row_json, week_raw, week_number, customer_name,
              ordering_party_code, customer_order_number, customer_order_item_number, work_order_number,
-             material_code, material_name, quantity, order_unit, planned_finish_date,
-             department_code, priority, is_valid, validation_errors, created_at, updated_at)
+             material_code, material_name, material_color, material_size, quantity, order_unit,
+             planned_finish_date, department_code, department_name, priority, priority_level,
+             is_valid, validation_errors, created_at, updated_at)
           values
             ($1, $2, $3, $4, $5, $6, $7,
              $8, $9, $10, $11,
-             $12, $13, $14, $15, $16,
-             $17, $18, $19, $20, $21, $22)`,
+             $12, $13, $14, $15, $16, $17,
+             $18, $19, $20, $21, $22,
+             $23, $24, $25, $26)`,
           [
             crypto.randomUUID(),
             createdBatch.id,
@@ -1234,11 +1451,15 @@ function createRepositoryDouble(
             row.workOrderNumber,
             row.materialCode,
             row.materialName,
+            row.materialColor,
+            row.materialSize,
             row.quantity,
             row.orderUnit,
             row.plannedFinishDate,
             row.departmentCode,
+            row.departmentName,
             row.priority,
+            row.priorityLevel,
             row.isValid,
             JSON.stringify(row.validationErrors),
             rowTimestamp,
@@ -1397,8 +1618,89 @@ function createRepositoryDouble(
         return targetBatch as ProductionPlanImportBatchResponse;
       }
 
-      if (targetBatch.weekNumber === null || targetBatch.validRowCount <= 0) {
-        throw new errors.ProductionPlanImportBatchNotActivatableError(id);
+      const summaryResult = await memoryPool.query(
+        `select
+          count(*)::int as total,
+          coalesce(sum(case when is_valid then 1 else 0 end), 0)::int as valid,
+          coalesce(sum(case when is_valid then 0 else 1 end), 0)::int as invalid
+        from production_plan.production_plan_rows
+        where batch_id = $1`,
+        [id]
+      );
+      const summaryRow = summaryResult.rows[0] as
+        | { total: number; valid: number; invalid: number }
+        | undefined;
+      const totalRowCount = summaryRow?.total ?? 0;
+      const validRowCount = summaryRow?.valid ?? 0;
+      const invalidRowCount = summaryRow?.invalid ?? 0;
+      const syncTimestamp = nextTimestamp();
+      await memoryPool.query(
+        `update production_plan.production_plan_import_batches
+        set total_row_count = $2,
+            valid_row_count = $3,
+            invalid_row_count = $4,
+            updated_at = $5
+        where id = $1`,
+        [id, totalRowCount, validRowCount, invalidRowCount, syncTimestamp]
+      );
+
+      let batch = (await this.findImportBatchById(
+        id
+      )) as ProductionPlanImportBatchResponse;
+
+      if (batch.weekNumber === null && batch.validRowCount > 0) {
+        const weeksResult = await memoryPool.query(
+          `select distinct week_number
+          from production_plan.production_plan_rows
+          where batch_id = $1
+            and is_valid = true
+            and week_number is not null`,
+          [id]
+        );
+        const distinctWeeks = weeksResult.rows
+          .map((row) => (row as { week_number: number }).week_number)
+          .filter((w) => w != null);
+
+        if (distinctWeeks.length === 0) {
+          throw new errors.ProductionPlanImportBatchNotActivatableError(
+            id,
+            "missing_week"
+          );
+        }
+
+        if (distinctWeeks.length > 1) {
+          throw new errors.ProductionPlanImportBatchNotActivatableError(
+            id,
+            "conflicting_weeks"
+          );
+        }
+
+        const [resolvedWeek] = distinctWeeks;
+        const inferTimestamp = nextTimestamp();
+        await memoryPool.query(
+          `update production_plan.production_plan_import_batches
+          set week_number = $2,
+              updated_at = $3
+          where id = $1`,
+          [id, resolvedWeek, inferTimestamp]
+        );
+        batch = (await this.findImportBatchById(
+          id
+        )) as ProductionPlanImportBatchResponse;
+      }
+
+      if (batch.validRowCount <= 0) {
+        throw new errors.ProductionPlanImportBatchNotActivatableError(
+          id,
+          "no_valid_rows"
+        );
+      }
+
+      if (batch.weekNumber === null) {
+        throw new errors.ProductionPlanImportBatchNotActivatableError(
+          id,
+          "missing_week"
+        );
       }
 
       const supersededTimestamp = nextTimestamp();
@@ -1408,7 +1710,7 @@ function createRepositoryDouble(
               updated_at = $2
         where week_number = $1
           and status = 'active'`,
-        [targetBatch.weekNumber, supersededTimestamp]
+        [batch.weekNumber, supersededTimestamp]
       );
 
       const activationTimestamp = nextTimestamp();
@@ -1435,6 +1737,27 @@ function createRepositoryDouble(
 
       return mapBatchRow(result.rows[0] as ProductionPlanImportBatchRow | undefined);
     },
+    async deleteBatchById(id: string): Promise<ProductionPlanImportBatchResponse | null> {
+      const result = await memoryPool.query(
+        `delete from production_plan.production_plan_import_batches
+        where id = $1
+        returning
+          id,
+          file_name,
+          sheet_name,
+          week_number,
+          status,
+          total_row_count,
+          valid_row_count,
+          invalid_row_count,
+          activated_at,
+          created_at,
+          updated_at`,
+        [id]
+      );
+
+      return mapBatchRow(result.rows[0] as ProductionPlanImportBatchRow | undefined);
+    },
     async findRowsByBatchId(
       batchId: string
     ): Promise<ProductionPlanImportRowResponse[]> {
@@ -1453,11 +1776,15 @@ function createRepositoryDouble(
           work_order_number,
           material_code,
           material_name,
+          material_color,
+          material_size,
           quantity,
           order_unit,
           planned_finish_date,
           department_code,
+          department_name,
           priority,
+          priority_level,
           is_valid,
           validation_errors,
           created_at,
@@ -1466,6 +1793,60 @@ function createRepositoryDouble(
         where batch_id = $1
         order by row_index asc`,
         [batchId]
+      );
+
+      return result.rows
+        .map((row) => mapRowRecord(row as ProductionPlanRowRecord))
+        .filter((row): row is ProductionPlanImportRowResponse => row !== null);
+    },
+    async countRowsByBatchId(batchId: string): Promise<number> {
+      const result = await memoryPool.query(
+        `select count(*)::int as c
+        from production_plan.production_plan_rows
+        where batch_id = $1`,
+        [batchId]
+      );
+
+      return Number((result.rows[0] as { c: number } | undefined)?.c ?? 0);
+    },
+    async findRowsByBatchIdPage(
+      batchId: string,
+      limit: number,
+      offset: number
+    ): Promise<ProductionPlanImportRowResponse[]> {
+      const result = await memoryPool.query(
+        `select
+          id,
+          batch_id,
+          row_index,
+          source_row_json,
+          week_raw,
+          week_number,
+          customer_name,
+          ordering_party_code,
+          customer_order_number,
+          customer_order_item_number,
+          work_order_number,
+          material_code,
+          material_name,
+          material_color,
+          material_size,
+          quantity,
+          order_unit,
+          planned_finish_date,
+          department_code,
+          department_name,
+          priority,
+          priority_level,
+          is_valid,
+          validation_errors,
+          created_at,
+          updated_at
+        from production_plan.production_plan_rows
+        where batch_id = $1
+        order by row_index asc
+        limit $2 offset $3`,
+        [batchId, limit, offset]
       );
 
       return result.rows
@@ -1488,11 +1869,15 @@ function createRepositoryDouble(
           work_order_number,
           material_code,
           material_name,
+          material_color,
+          material_size,
           quantity,
           order_unit,
           planned_finish_date,
           department_code,
+          department_name,
           priority,
+          priority_level,
           is_valid,
           validation_errors,
           created_at,
@@ -1535,11 +1920,15 @@ function createRepositoryDouble(
               workOrderNumber: input.workOrderNumber,
               materialCode: input.materialCode,
               materialName: input.materialName,
+              materialColor: input.materialColor,
+              materialSize: input.materialSize,
               quantity: input.quantity,
               orderUnit: input.orderUnit,
               plannedFinishDate: input.plannedFinishDate,
               departmentCode: input.departmentCode,
+              departmentName: input.departmentName,
               priority: input.priority,
+              priorityLevel: input.priorityLevel,
               isValid: input.isValid,
               validationErrors: [...input.validationErrors]
             }
@@ -1568,14 +1957,18 @@ function createRepositoryDouble(
               work_order_number = $8,
               material_code = $9,
               material_name = $10,
-              quantity = $11,
-              order_unit = $12,
-              planned_finish_date = $13,
-              department_code = $14,
-              priority = $15,
-              is_valid = $16,
-              validation_errors = $17,
-              updated_at = $18
+              material_color = $11,
+              material_size = $12,
+              quantity = $13,
+              order_unit = $14,
+              planned_finish_date = $15,
+              department_code = $16,
+              department_name = $17,
+              priority = $18,
+              priority_level = $19,
+              is_valid = $20,
+              validation_errors = $21,
+              updated_at = $22
         where id = $1
         returning
           id,
@@ -1591,11 +1984,15 @@ function createRepositoryDouble(
           work_order_number,
           material_code,
           material_name,
+          material_color,
+          material_size,
           quantity,
           order_unit,
           planned_finish_date,
           department_code,
+          department_name,
           priority,
+          priority_level,
           is_valid,
           validation_errors,
           created_at,
@@ -1611,11 +2008,15 @@ function createRepositoryDouble(
           input.workOrderNumber,
           input.materialCode,
           input.materialName,
+          input.materialColor,
+          input.materialSize,
           input.quantity,
           input.orderUnit,
           input.plannedFinishDate,
           input.departmentCode,
+          input.departmentName,
           input.priority,
+          input.priorityLevel,
           input.isValid,
           JSON.stringify(input.validationErrors),
           rowUpdatedAt
@@ -1683,6 +2084,7 @@ function mapBatchRow(
     id: row.id,
     fileName: row.file_name,
     sheetName: row.sheet_name,
+    planYear: row.plan_year ?? null,
     weekNumber: row.week_number,
     status: row.status,
     totalRowCount: row.total_row_count,
@@ -1719,6 +2121,9 @@ function mapRowRecord(
     workOrderNumber: row.work_order_number,
     materialCode: row.material_code,
     materialName: row.material_name,
+    materialColor: row.material_color,
+    materialSize: row.material_size,
+    mainProfileCode: row.main_profile_code,
     quantity:
       row.quantity === null ? null : typeof row.quantity === "number" ? row.quantity : Number(row.quantity),
     orderUnit: row.order_unit,
@@ -1727,7 +2132,9 @@ function mapRowRecord(
         ? null
         : normalizeDateOnly(row.planned_finish_date),
     departmentCode: row.department_code,
+    departmentName: row.department_name,
     priority: row.priority,
+    priorityLevel: row.priority_level,
     isValid: row.is_valid,
     validationErrors:
       typeof row.validation_errors === "string"
@@ -1768,6 +2175,25 @@ function buildRequiredHeaders(): unknown[] {
   ];
 }
 
+/** Column labels as in typical SAP / Kesimhane weekly exports (variant spellings). */
+function buildScreenshotStyleHeaders(): unknown[] {
+  return [
+    "Hafta",
+    "Ad",
+    "Sipş.veren",
+    "Mşt.no.",
+    "Mşt.klm.",
+    "Sipariş",
+    "Malzeme no.",
+    "Malzeme kısa metni",
+    "Miktar",
+    "Sipş.OB",
+    "Plnl.bitiş",
+    "Bölüm",
+    "Öncelik"
+  ];
+}
+
 function buildProductionPlanRow(
   overrides: Partial<{
     week: unknown;
@@ -1793,12 +2219,12 @@ function buildProductionPlanRow(
     overrides.customerOrderItemNumber ?? "00010",
     overrides.workOrderNumber ?? "WO-001",
     overrides.materialCode ?? "MAT-001",
-    overrides.materialName ?? "Ana Profil",
+    overrides.materialName ?? "Ana Profil RAL9005 A0",
     overrides.quantity ?? "25",
     overrides.orderUnit ?? "ADET",
     overrides.plannedFinishDate ?? "17.03.2026",
-    overrides.departmentCode ?? "CUT01",
-    overrides.priority ?? "YUKSEK"
+    overrides.departmentCode ?? "7",
+    overrides.priority ?? "1"
   ];
 }
 

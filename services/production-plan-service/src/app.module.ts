@@ -1,5 +1,6 @@
 import { Module } from "@nestjs/common";
 import { ConfigModule } from "@nestjs/config";
+import path from "node:path";
 
 import { CommonModule } from "./common/common.module";
 import { validateEnv } from "./config/env";
@@ -12,6 +13,10 @@ import { ProductionPlanModule } from "./modules/production-plan/production-plan.
     ConfigModule.forRoot({
       isGlobal: true,
       cache: true,
+      envFilePath: [
+        path.resolve(__dirname, "..", ".env"),
+        path.resolve(__dirname, "..", "..", "..", ".env")
+      ],
       validate: validateEnv
     }),
     CommonModule,

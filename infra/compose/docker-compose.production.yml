@@ -1,0 +1,205 @@
+name: lemnixpro-production
+
+x-node-service: &node-service
+  build:
+    context: ../..
+    dockerfile: infra/docker/node-service.Dockerfile
+  restart: unless-stopped
+  networks:
+    - lemnixpro-backend
+  depends_on:
+    postgres:
+      condition: service_healthy
+    rabbitmq:
+      condition: service_healthy
+  environment: &node-service-env
+    NODE_ENV: production
+    LOG_LEVEL: ${LOG_LEVEL:-info}
+    ENABLE_SWAGGER: ${ENABLE_SWAGGER:-false}
+    RABBITMQ_URL: ${RABBITMQ_URL:?RABBITMQ_URL is required}
+    INTERNAL_SERVICE_AUTH_SECRET: ${INTERNAL_SERVICE_AUTH_SECRET:?INTERNAL_SERVICE_AUTH_SECRET is required}
+    UPSTREAM_REQUEST_TIMEOUT_MS: ${UPSTREAM_REQUEST_TIMEOUT_MS:-8000}
+    UPLOAD_REQUEST_TIMEOUT_MS: ${UPLOAD_REQUEST_TIMEOUT_MS:-60000}
+    RABBITMQ_RETRY_EXCHANGE: ${RABBITMQ_RETRY_EXCHANGE:-optimization.retry.exchange}
+    RABBITMQ_DEAD_LETTER_EXCHANGE: ${RABBITMQ_DEAD_LETTER_EXCHANGE:-optimization.dlx}
+    RABBITMQ_RETRY_DELAY_MS: ${RABBITMQ_RETRY_DELAY_MS:-30000}
+    IDENTITY_SERVICE_BASE_URL: http://identity-service:3002
+    MASTER_DATA_SERVICE_BASE_URL: http://master-data-service:3003
+    PRODUCTION_PLAN_SERVICE_BASE_URL: http://production-plan-service:3004
+    CUT_LIST_SERVICE_BASE_URL: http://cut-list-service:3005
+    OPTIMIZATION_ORCHESTRATOR_SERVICE_BASE_URL: http://optimization-orchestrator-service:3006
+    RESULT_SERVICE_BASE_URL: http://result-service:3007
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: lemnixpro-postgres-primary
+    restart: unless-stopped
+    networks:
+      - lemnixpro-backend
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:?POSTGRES_DB is required}
+      POSTGRES_USER: ${POSTGRES_USER:?POSTGRES_USER is required}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+    volumes:
+      - lemnixpro-prod-postgres-data:/var/lib/postgresql/data
+      - ../postgres/init-schemas.sql:/docker-entrypoint-initdb.d/init-schemas.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+
+  rabbitmq:
+    image: rabbitmq:3.13-management-alpine
+    container_name: lemnixpro-rabbitmq-broker
+    restart: unless-stopped
+    networks:
+      - lemnixpro-backend
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_DEFAULT_USER:?RABBITMQ_DEFAULT_USER is required}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_DEFAULT_PASS:?RABBITMQ_DEFAULT_PASS is required}
+      RABBITMQ_SERVER_ADDITIONAL_ERL_ARGS: "-rabbit consumer_timeout 1800000"
+    volumes:
+      - lemnixpro-prod-rabbitmq-data:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+
+  api-gateway-service:
+    <<: *node-service
+    container_name: lemnixpro-api-gateway
+    build:
+      context: ../..
+      dockerfile: infra/docker/node-service.Dockerfile
+      args:
+        SERVICE_PACKAGE: "@lemnixpro/api-gateway-service"
+    environment:
+      <<: *node-service-env
+      SERVICE_NAME: api-gateway-service
+      PORT: 3001
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required}
+    ports:
+      - "${API_GATEWAY_PORT:-3001}:3001"
+
+  identity-service:
+    <<: *node-service
+    container_name: lemnixpro-identity
+    build:
+      context: ../..
+      dockerfile: infra/docker/node-service.Dockerfile
+      args:
+        SERVICE_PACKAGE: "@lemnixpro/identity-service"
+    environment:
+      <<: *node-service-env
+      SERVICE_NAME: identity-service
+      PORT: 3002
+      DATABASE_URL: ${IDENTITY_DATABASE_URL:?IDENTITY_DATABASE_URL is required}
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required}
+
+  master-data-service:
+    <<: *node-service
+    container_name: lemnixpro-master-data
+    build:
+      context: ../..
+      dockerfile: infra/docker/node-service.Dockerfile
+      args:
+        SERVICE_PACKAGE: "@lemnixpro/master-data-service"
+    environment:
+      <<: *node-service-env
+      SERVICE_NAME: master-data-service
+      PORT: 3003
+      DATABASE_URL: ${MASTER_DATA_DATABASE_URL:?MASTER_DATA_DATABASE_URL is required}
+
+  production-plan-service:
+    <<: *node-service
+    container_name: lemnixpro-production-plan
+    build:
+      context: ../..
+      dockerfile: infra/docker/node-service.Dockerfile
+      args:
+        SERVICE_PACKAGE: "@lemnixpro/production-plan-service"
+    environment:
+      <<: *node-service-env
+      SERVICE_NAME: production-plan-service
+      PORT: 3004
+      DATABASE_URL: ${PRODUCTION_PLAN_DATABASE_URL:?PRODUCTION_PLAN_DATABASE_URL is required}
+
+  cut-list-service:
+    <<: *node-service
+    container_name: lemnixpro-cut-list
+    build:
+      context: ../..
+      dockerfile: infra/docker/node-service.Dockerfile
+      args:
+        SERVICE_PACKAGE: "@lemnixpro/cut-list-service"
+    environment:
+      <<: *node-service-env
+      SERVICE_NAME: cut-list-service
+      PORT: 3005
+      DATABASE_URL: ${CUT_LIST_DATABASE_URL:?CUT_LIST_DATABASE_URL is required}
+
+  optimization-orchestrator-service:
+    <<: *node-service
+    container_name: lemnixpro-optimization-orchestrator
+    build:
+      context: ../..
+      dockerfile: infra/docker/node-service.Dockerfile
+      args:
+        SERVICE_PACKAGE: "@lemnixpro/optimization-orchestrator-service"
+    environment:
+      <<: *node-service-env
+      SERVICE_NAME: optimization-orchestrator-service
+      PORT: 3006
+      DATABASE_URL: ${OPTIMIZATION_ORCHESTRATOR_DATABASE_URL:?OPTIMIZATION_ORCHESTRATOR_DATABASE_URL is required}
+      OPTIMIZATION_REQUEST_QUEUE: ${OPTIMIZATION_REQUEST_QUEUE:-optimization.requests}
+
+  result-service:
+    <<: *node-service
+    container_name: lemnixpro-result
+    build:
+      context: ../..
+      dockerfile: infra/docker/node-service.Dockerfile
+      args:
+        SERVICE_PACKAGE: "@lemnixpro/result-service"
+    environment:
+      <<: *node-service-env
+      SERVICE_NAME: result-service
+      PORT: 3007
+      DATABASE_URL: ${RESULT_DATABASE_URL:?RESULT_DATABASE_URL is required}
+
+  optimization-engine:
+    build:
+      context: ../../engines/optimization-engine
+      dockerfile: Dockerfile
+    container_name: lemnixpro-optimization-engine
+    restart: unless-stopped
+    networks:
+      - lemnixpro-backend
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+      result-service:
+        condition: service_started
+    environment:
+      ENVIRONMENT: production
+      RABBITMQ_URL: ${RABBITMQ_URL:?RABBITMQ_URL is required}
+      OPTIMIZATION_REQUEST_QUEUE: ${OPTIMIZATION_REQUEST_QUEUE:-optimization.requests}
+      RESULT_SERVICE_BASE_URL: http://result-service:3007
+      INTERNAL_SERVICE_AUTH_SECRET: ${INTERNAL_SERVICE_AUTH_SECRET:?INTERNAL_SERVICE_AUTH_SECRET is required}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+    expose:
+      - "8000"
+
+networks:
+  lemnixpro-backend:
+    name: lemnixpro-backend
+    driver: bridge
+
+volumes:
+  lemnixpro-prod-postgres-data:
+  lemnixpro-prod-rabbitmq-data:
