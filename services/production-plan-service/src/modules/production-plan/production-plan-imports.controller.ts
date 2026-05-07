@@ -4,6 +4,7 @@ import {
   DefaultValuePipe,
   Delete,
   Get,
+  Headers,
   HttpCode,
   HttpStatus,
   Inject,
@@ -38,6 +39,11 @@ import { ProductionPlanImportRowResponseDto } from "./dto/production-plan-import
 import { ProductionPlanImportRowsPageResponseDto } from "./dto/production-plan-import-rows-page-response.dto";
 import { UpdateProductionPlanRowRequestDto } from "./dto/update-production-plan-row-request.dto";
 import { ParseProductionPlanWeekNumberPipe } from "./parse-production-plan-week-number.pipe";
+import {
+  resolveSingleFacilityContext,
+  type FacilityRequestHeaders
+} from "../../common/facility-context";
+
 import {
   type UploadedProductionPlanImportFile,
   ProductionPlanImportsService
@@ -76,16 +82,23 @@ export class ProductionPlanImportsController {
     description: "The upload is invalid or the workbook structure is not supported."
   })
   async createImport(
+    @Headers() headers: FacilityRequestHeaders,
     @UploadedFile() file?: UploadedProductionPlanImportFile
   ): Promise<ProductionPlanImportBatchResponseDto> {
-    return this.productionPlanImportsService.createImport(file);
+    const { facilityId } = resolveSingleFacilityContext(headers);
+
+    return this.productionPlanImportsService.createImport(facilityId, file);
   }
 
   @Get("production-plan-imports")
   @ApiOperation({ summary: "List production plan import batches newest first." })
   @ApiOkResponse({ type: ProductionPlanImportBatchResponseDto, isArray: true })
-  async findAllImports(): Promise<ProductionPlanImportBatchResponseDto[]> {
-    return this.productionPlanImportsService.findAllImports();
+  async findAllImports(
+    @Headers() headers: FacilityRequestHeaders
+  ): Promise<ProductionPlanImportBatchResponseDto[]> {
+    const { facilityId } = resolveSingleFacilityContext(headers);
+
+    return this.productionPlanImportsService.findAllImports(facilityId);
   }
 
   @Get("production-plan-weeks/:weekNumber/batches")
@@ -98,10 +111,16 @@ export class ProductionPlanImportsController {
     description: "weekNumber must be a positive integer."
   })
   async findImportsByWeekNumber(
+    @Headers() headers: FacilityRequestHeaders,
     @Param("weekNumber", new ParseProductionPlanWeekNumberPipe())
     weekNumber: number
   ): Promise<ProductionPlanImportBatchResponseDto[]> {
-    return this.productionPlanImportsService.findImportsByWeekNumber(weekNumber);
+    const { facilityId } = resolveSingleFacilityContext(headers);
+
+    return this.productionPlanImportsService.findImportsByWeekNumber(
+      facilityId,
+      weekNumber
+    );
   }
 
   @Get("production-plan-imports/:id")
@@ -109,9 +128,12 @@ export class ProductionPlanImportsController {
   @ApiOkResponse({ type: ProductionPlanImportBatchDetailResponseDto })
   @ApiNotFoundResponse({ description: "Production plan import batch was not found." })
   async findImportById(
+    @Headers() headers: FacilityRequestHeaders,
     @Param("id", new ParseUUIDPipe({ version: "4" })) id: string
   ): Promise<ProductionPlanImportBatchDetailResponseDto> {
-    return this.productionPlanImportsService.findImportById(id);
+    const { facilityId } = resolveSingleFacilityContext(headers);
+
+    return this.productionPlanImportsService.findImportById(facilityId, id);
   }
 
   @Get("production-plan-imports/:id/rows/paged")
@@ -122,11 +144,15 @@ export class ProductionPlanImportsController {
   @ApiOkResponse({ type: ProductionPlanImportRowsPageResponseDto })
   @ApiNotFoundResponse({ description: "Production plan import batch was not found." })
   async findRowsByBatchIdPaged(
+    @Headers() headers: FacilityRequestHeaders,
     @Param("id", new ParseUUIDPipe({ version: "4" })) id: string,
     @Query("limit", new DefaultValuePipe(100), ParseIntPipe) limit: number,
     @Query("offset", new DefaultValuePipe(0), ParseIntPipe) offset: number
   ): Promise<ProductionPlanImportRowsPageResponseDto> {
+    const { facilityId } = resolveSingleFacilityContext(headers);
+
     return this.productionPlanImportsService.findRowsByBatchIdPaged(
+      facilityId,
       id,
       limit,
       offset
@@ -138,9 +164,12 @@ export class ProductionPlanImportsController {
   @ApiOkResponse({ type: ProductionPlanImportRowResponseDto, isArray: true })
   @ApiNotFoundResponse({ description: "Production plan import batch was not found." })
   async findRowsByBatchId(
+    @Headers() headers: FacilityRequestHeaders,
     @Param("id", new ParseUUIDPipe({ version: "4" })) id: string
   ): Promise<ProductionPlanImportRowResponseDto[]> {
-    return this.productionPlanImportsService.findRowsByBatchId(id);
+    const { facilityId } = resolveSingleFacilityContext(headers);
+
+    return this.productionPlanImportsService.findRowsByBatchId(facilityId, id);
   }
 
   @Delete("production-plan-imports/:id")
@@ -151,9 +180,12 @@ export class ProductionPlanImportsController {
   @ApiResponse({ status: HttpStatus.NO_CONTENT, description: "Batch deleted." })
   @ApiNotFoundResponse({ description: "Production plan import batch was not found." })
   async deleteImport(
+    @Headers() headers: FacilityRequestHeaders,
     @Param("id", new ParseUUIDPipe({ version: "4" })) id: string
   ): Promise<void> {
-    return this.productionPlanImportsService.deleteImport(id);
+    const { facilityId } = resolveSingleFacilityContext(headers);
+
+    return this.productionPlanImportsService.deleteImport(facilityId, id);
   }
 
   @Post("production-plan-imports/:id/activate")
@@ -166,9 +198,12 @@ export class ProductionPlanImportsController {
       "Batch cannot be activated (no valid rows, missing week on valid rows, or conflicting weeks). Row counts are reconciled from stored rows before checks; batch week may be inferred from valid rows when missing."
   })
   async activateImport(
+    @Headers() headers: FacilityRequestHeaders,
     @Param("id", new ParseUUIDPipe({ version: "4" })) id: string
   ): Promise<ProductionPlanImportBatchResponseDto> {
-    return this.productionPlanImportsService.activateImport(id);
+    const { facilityId } = resolveSingleFacilityContext(headers);
+
+    return this.productionPlanImportsService.activateImport(facilityId, id);
   }
 
   @Get("production-plan-weeks/:weekNumber/active-batch/rows")
@@ -184,10 +219,14 @@ export class ProductionPlanImportsController {
     description: "No active production plan import batch exists for the requested week."
   })
   async findActiveBatchRowsByWeekNumber(
+    @Headers() headers: FacilityRequestHeaders,
     @Param("weekNumber", new ParseProductionPlanWeekNumberPipe())
     weekNumber: number
   ): Promise<ProductionPlanActiveBatchRowsResponseDto> {
+    const { facilityId } = resolveSingleFacilityContext(headers);
+
     return this.productionPlanImportsService.findActiveBatchRowsByWeekNumber(
+      facilityId,
       weekNumber
     );
   }
@@ -202,10 +241,14 @@ export class ProductionPlanImportsController {
     description: "No active production plan import batch exists for the requested week."
   })
   async findActiveBatchByWeekNumber(
+    @Headers() headers: FacilityRequestHeaders,
     @Param("weekNumber", new ParseProductionPlanWeekNumberPipe())
     weekNumber: number
   ): Promise<ProductionPlanImportBatchResponseDto> {
+    const { facilityId } = resolveSingleFacilityContext(headers);
+
     return this.productionPlanImportsService.findActiveBatchByWeekNumber(
+      facilityId,
       weekNumber
     );
   }
@@ -221,6 +264,7 @@ export class ProductionPlanImportsController {
     description: "An active production plan import batch must retain at least one valid row."
   })
   async updateRow(
+    @Headers() headers: FacilityRequestHeaders,
     @Param("id", new ParseUUIDPipe({ version: "4" })) id: string,
     @Body(
       new ValidationPipe({
@@ -232,6 +276,8 @@ export class ProductionPlanImportsController {
     )
     request: UpdateProductionPlanRowRequestDto
   ): Promise<ProductionPlanImportRowResponseDto> {
-    return this.productionPlanImportsService.updateRow(id, request);
+    const { facilityId } = resolveSingleFacilityContext(headers);
+
+    return this.productionPlanImportsService.updateRow(facilityId, id, request);
   }
 }

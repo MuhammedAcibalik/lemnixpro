@@ -9,39 +9,56 @@ import type {
   UpdateProductionPlanRowRequest
 } from "@lemnixpro/shared-contracts";
 
+import {
+  readActiveFacilityHeaders,
+  requireSingleActiveFacilityHeaders
+} from "../facility-context";
+
 import { requestGatewayWithSession } from "./http";
 
-export function listProductionPlanImports(): Promise<ProductionPlanImportBatch[]> {
+export async function listProductionPlanImports(): Promise<ProductionPlanImportBatch[]> {
   return requestGatewayWithSession<ProductionPlanImportBatch[]>(
-    "/production-plan-imports"
+    "/production-plan-imports",
+    {
+      headers: await readActiveFacilityHeaders()
+    }
   );
 }
 
-export function listProductionPlanWeekBatches(
+export async function listProductionPlanWeekBatches(
   weekNumber: number
 ): Promise<ProductionPlanImportBatch[]> {
   return requestGatewayWithSession<ProductionPlanImportBatch[]>(
-    `/production-plan-weeks/${weekNumber}/batches`
+    `/production-plan-weeks/${weekNumber}/batches`,
+    {
+      headers: await readActiveFacilityHeaders()
+    }
   );
 }
 
-export function getProductionPlanImport(
+export async function getProductionPlanImport(
   id: string
 ): Promise<ProductionPlanImportBatchDetail> {
   return requestGatewayWithSession<ProductionPlanImportBatchDetail>(
-    `/production-plan-imports/${id}`
+    `/production-plan-imports/${id}`,
+    {
+      headers: await readActiveFacilityHeaders()
+    }
   );
 }
 
-export function getProductionPlanRows(
+export async function getProductionPlanRows(
   id: string
 ): Promise<ProductionPlanImportRow[]> {
   return requestGatewayWithSession<ProductionPlanImportRow[]>(
-    `/production-plan-imports/${id}/rows`
+    `/production-plan-imports/${id}/rows`,
+    {
+      headers: await readActiveFacilityHeaders()
+    }
   );
 }
 
-export function getProductionPlanRowsPage(
+export async function getProductionPlanRowsPage(
   id: string,
   query: { limit: number; offset: number }
 ): Promise<ProductionPlanImportRowsPage> {
@@ -51,44 +68,55 @@ export function getProductionPlanRowsPage(
   });
 
   return requestGatewayWithSession<ProductionPlanImportRowsPage>(
-    `/production-plan-imports/${id}/rows/paged?${params.toString()}`
+    `/production-plan-imports/${id}/rows/paged?${params.toString()}`,
+    {
+      headers: await readActiveFacilityHeaders()
+    }
   );
 }
 
-export function activateProductionPlanImport(
+export async function activateProductionPlanImport(
   id: string
 ): Promise<ProductionPlanImportBatch> {
   return requestGatewayWithSession<ProductionPlanImportBatch>(
     `/production-plan-imports/${id}/activate`,
     {
-      method: "POST"
+      method: "POST",
+      headers: await requireSingleActiveFacilityHeaders()
     }
   );
 }
 
-export function deleteProductionPlanImport(id: string): Promise<void> {
+export async function deleteProductionPlanImport(id: string): Promise<void> {
   return requestGatewayWithSession<void>(`/production-plan-imports/${id}`, {
-    method: "DELETE"
+    method: "DELETE",
+    headers: await requireSingleActiveFacilityHeaders()
   });
 }
 
-export function getActiveProductionPlanBatch(
+export async function getActiveProductionPlanBatch(
   weekNumber: number
 ): Promise<ProductionPlanImportBatch> {
   return requestGatewayWithSession<ProductionPlanImportBatch>(
-    `/production-plan-weeks/${weekNumber}/active-batch`
+    `/production-plan-weeks/${weekNumber}/active-batch`,
+    {
+      headers: await readActiveFacilityHeaders()
+    }
   );
 }
 
-export function getActiveProductionPlanRows(
+export async function getActiveProductionPlanRows(
   weekNumber: number
 ): Promise<ProductionPlanActiveBatchRowsResponse> {
   return requestGatewayWithSession<ProductionPlanActiveBatchRowsResponse>(
-    `/production-plan-weeks/${weekNumber}/active-batch/rows`
+    `/production-plan-weeks/${weekNumber}/active-batch/rows`,
+    {
+      headers: await readActiveFacilityHeaders()
+    }
   );
 }
 
-export function uploadProductionPlan(
+export async function uploadProductionPlan(
   file: File
 ): Promise<ProductionPlanImportBatch> {
   const formData = new FormData();
@@ -98,12 +126,13 @@ export function uploadProductionPlan(
     "/production-plan-imports",
     {
       method: "POST",
+      headers: await requireSingleActiveFacilityHeaders(),
       body: formData
     }
   );
 }
 
-export function updateProductionPlanRow(
+export async function updateProductionPlanRow(
   id: string,
   request: UpdateProductionPlanRowRequest
 ): Promise<ProductionPlanImportRow> {
@@ -112,6 +141,7 @@ export function updateProductionPlanRow(
     {
       method: "PATCH",
       headers: {
+        ...(await requireSingleActiveFacilityHeaders()),
         "content-type": "application/json"
       },
       body: JSON.stringify(request)

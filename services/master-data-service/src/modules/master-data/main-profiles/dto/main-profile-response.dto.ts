@@ -30,6 +30,9 @@ export class MainProfileResponseDto implements MainProfile {
   id!: string;
 
   @ApiProperty({ type: String })
+  facilityId!: string;
+
+  @ApiProperty({ type: String })
   code!: string;
 
   @ApiProperty({ type: String })

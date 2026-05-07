@@ -7,6 +7,7 @@ import { newDb } from "pg-mem";
 import request from "supertest";
 import * as XLSX from "xlsx";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { requestHeaders } from "@lemnixpro/shared-contracts";
 
 import type {
   CreateProductionPlanImportBatchRecord,
@@ -23,6 +24,7 @@ type BatchStatus = "imported" | "active" | "superseded";
 
 type ProductionPlanImportBatchResponse = {
   id: string;
+  facilityId: string;
   fileName: string;
   sheetName: string;
   planYear: number | null;
@@ -39,6 +41,7 @@ type ProductionPlanImportBatchResponse = {
 type ProductionPlanImportRowResponse = {
   id: string;
   batchId: string;
+  facilityId: string;
   rowIndex: number;
   sourceRowJson: Record<string, unknown>;
   weekRaw: string | null;
@@ -68,6 +71,7 @@ type ProductionPlanImportRowResponse = {
 
 type ProductionPlanActiveBatchRowResponse = {
   id: string;
+  facilityId: string;
   rowIndex: number;
   weekRaw: string | null;
   weekNumber: number | null;
@@ -99,6 +103,7 @@ type ProductionPlanActiveBatchRowsResponse = {
 
 type ProductionPlanImportBatchRow = {
   id: string;
+  facility_id: string;
   file_name: string;
   sheet_name: string;
   plan_year?: number | null;
@@ -115,6 +120,7 @@ type ProductionPlanImportBatchRow = {
 type ProductionPlanRowRecord = {
   id: string;
   batch_id: string;
+  facility_id: string;
   row_index: number;
   source_row_json: Record<string, unknown> | string;
   week_raw: string | null;
@@ -818,6 +824,85 @@ describe("production-plan-service imports", () => {
     });
   });
 
+  it("scopes imports, activation, active batch lookup, and rows by facility", async () => {
+    const httpServer = app.getHttpServer() as Parameters<typeof request>[0];
+    const workbook = {
+      "Weekly Plan": [buildRequiredHeaders(), buildProductionPlanRow()]
+    };
+    const facilityABatch = await createImport(
+      httpServer,
+      workbook,
+      "facility-a-week-12.xlsx",
+      "facility-a"
+    );
+    const facilityBBatch = await createImport(
+      httpServer,
+      workbook,
+      "facility-b-week-12.xlsx",
+      "facility-b"
+    );
+
+    await request(httpServer)
+      .post(`/production-plan-imports/${facilityABatch.id}/activate`)
+      .set(requestHeaders.facilityId, "facility-a")
+      .expect(200);
+    await request(httpServer)
+      .post(`/production-plan-imports/${facilityBBatch.id}/activate`)
+      .set(requestHeaders.facilityId, "facility-b")
+      .expect(200);
+
+    const facilityAList = await request(httpServer)
+      .get("/production-plan-imports")
+      .set(requestHeaders.facilityId, "facility-a")
+      .expect(200);
+    expect(
+      facilityAList.body.map((batch: ProductionPlanImportBatchResponse) => batch.id)
+    ).toEqual([facilityABatch.id]);
+
+    const facilityBList = await request(httpServer)
+      .get("/production-plan-imports")
+      .set(requestHeaders.facilityId, "facility-b")
+      .expect(200);
+    expect(
+      facilityBList.body.map((batch: ProductionPlanImportBatchResponse) => batch.id)
+    ).toEqual([facilityBBatch.id]);
+
+    const activeAResponse = await request(httpServer)
+      .get("/production-plan-weeks/12/active-batch")
+      .set(requestHeaders.facilityId, "facility-a")
+      .expect(200);
+    expect(activeAResponse.body).toMatchObject({
+      id: facilityABatch.id,
+      facilityId: "facility-a",
+      status: "active"
+    });
+
+    const activeBResponse = await request(httpServer)
+      .get("/production-plan-weeks/12/active-batch")
+      .set(requestHeaders.facilityId, "facility-b")
+      .expect(200);
+    expect(activeBResponse.body).toMatchObject({
+      id: facilityBBatch.id,
+      facilityId: "facility-b",
+      status: "active"
+    });
+
+    await request(httpServer)
+      .get(`/production-plan-imports/${facilityBBatch.id}/rows`)
+      .set(requestHeaders.facilityId, "facility-a")
+      .expect(404);
+
+    await request(httpServer)
+      .post("/production-plan-imports")
+      .set(requestHeaders.facilityScope, "all")
+      .attach("file", createWorkbookBuffer(workbook), {
+        filename: "all-scope.xlsx",
+        contentType:
+          "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+      })
+      .expect(403);
+  });
+
   it("returns 404 when no active batch exists for active-batch rows lookup", async () => {
     const httpServer = app.getHttpServer() as Parameters<typeof request>[0];
 
@@ -1070,13 +1155,15 @@ describe("production-plan-service imports", () => {
     const legacyLikeTimestamp = new Date().toISOString();
     await memoryPool.query(
       `insert into production_plan.production_plan_import_batches
-        (id, file_name, sheet_name, week_number, status, total_row_count, valid_row_count, invalid_row_count, activated_at, created_at, updated_at)
+        (id, facility_id, file_name, sheet_name, plan_year, week_number, status, total_row_count, valid_row_count, invalid_row_count, activated_at, created_at, updated_at)
       values
-        ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
+        ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`,
       [
         legacyLikeBatchId,
+        "default-facility",
         "legacy-unresolved-week.xlsx",
         "Legacy Plan",
+        null,
         null,
         "imported",
         2,
@@ -1274,10 +1361,18 @@ describe("production-plan-service imports", () => {
 async function createImport(
   httpServer: Parameters<typeof request>[0],
   sheets: Record<string, unknown[][]>,
-  fileName: string
+  fileName: string,
+  facilityId?: string
 ): Promise<ProductionPlanImportBatchResponse> {
-  const response = await request(httpServer)
-    .post("/production-plan-imports")
+  const importRequest = request(httpServer).post("/production-plan-imports");
+
+  if (facilityId) {
+    importRequest
+      .set(requestHeaders.facilityId, facilityId)
+      .set(requestHeaders.facilityScope, "single");
+  }
+
+  const response = await importRequest
     .attach("file", createWorkbookBuffer(sheets), {
       filename: fileName,
       contentType:
@@ -1292,10 +1387,18 @@ async function createImport(
 async function uploadWorkbook(
   httpServer: Parameters<typeof request>[0],
   sheets: Record<string, unknown[][]>,
-  fileName: string
+  fileName: string,
+  facilityId?: string
 ) {
-  return request(httpServer)
-    .post("/production-plan-imports")
+  const importRequest = request(httpServer).post("/production-plan-imports");
+
+  if (facilityId) {
+    importRequest
+      .set(requestHeaders.facilityId, facilityId)
+      .set(requestHeaders.facilityScope, "single");
+  }
+
+  return importRequest
     .attach("file", createWorkbookBuffer(sheets), {
       filename: fileName,
       contentType:
@@ -1308,6 +1411,7 @@ async function createDatabaseSchema(memoryPool: QueryablePool): Promise<void> {
   await memoryPool.query(`
     create table production_plan.production_plan_import_batches (
       id uuid primary key,
+      facility_id varchar(128) not null,
       file_name varchar(255) not null,
       sheet_name varchar(255) not null,
       plan_year integer,
@@ -1324,6 +1428,7 @@ async function createDatabaseSchema(memoryPool: QueryablePool): Promise<void> {
   await memoryPool.query(`
     create table production_plan.production_plan_rows (
       id uuid primary key,
+      facility_id varchar(128) not null,
       batch_id uuid not null references production_plan.production_plan_import_batches (id) on delete cascade,
       row_index integer not null,
       source_row_json jsonb not null,
@@ -1353,11 +1458,11 @@ async function createDatabaseSchema(memoryPool: QueryablePool): Promise<void> {
   `);
   await memoryPool.query(`
     create index production_plan_import_batches_week_number_idx
-      on production_plan.production_plan_import_batches (week_number);
+      on production_plan.production_plan_import_batches (facility_id, week_number);
   `);
   await memoryPool.query(`
     create index production_plan_rows_batch_id_idx
-      on production_plan.production_plan_rows (batch_id);
+      on production_plan.production_plan_rows (facility_id, batch_id);
   `);
   await memoryPool.query(`
     create unique index production_plan_rows_batch_id_row_index_unique
@@ -1383,11 +1488,12 @@ function createRepositoryDouble(
       const createdAt = nextTimestamp();
       const result = await memoryPool.query(
         `insert into production_plan.production_plan_import_batches
-          (id, file_name, sheet_name, plan_year, week_number, status, total_row_count, valid_row_count, invalid_row_count, activated_at, created_at, updated_at)
+          (id, facility_id, file_name, sheet_name, plan_year, week_number, status, total_row_count, valid_row_count, invalid_row_count, activated_at, created_at, updated_at)
         values
-          ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+          ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
         returning
           id,
+          facility_id,
           file_name,
           sheet_name,
           plan_year,
@@ -1401,6 +1507,7 @@ function createRepositoryDouble(
           updated_at`,
         [
           batchId,
+          input.facilityId,
           input.fileName,
           input.sheetName,
           input.planYear,
@@ -1426,19 +1533,20 @@ function createRepositoryDouble(
         const rowTimestamp = nextTimestamp();
         await memoryPool.query(
           `insert into production_plan.production_plan_rows
-            (id, batch_id, row_index, source_row_json, week_raw, week_number, customer_name,
+            (id, facility_id, batch_id, row_index, source_row_json, week_raw, week_number, customer_name,
              ordering_party_code, customer_order_number, customer_order_item_number, work_order_number,
              material_code, material_name, material_color, material_size, quantity, order_unit,
              planned_finish_date, department_code, department_name, priority, priority_level,
              is_valid, validation_errors, created_at, updated_at)
           values
-            ($1, $2, $3, $4, $5, $6, $7,
-             $8, $9, $10, $11,
-             $12, $13, $14, $15, $16, $17,
-             $18, $19, $20, $21, $22,
-             $23, $24, $25, $26)`,
+            ($1, $2, $3, $4, $5, $6, $7, $8,
+             $9, $10, $11, $12,
+             $13, $14, $15, $16, $17, $18,
+             $19, $20, $21, $22, $23,
+             $24, $25, $26, $27)`,
           [
             crypto.randomUUID(),
+            input.facilityId,
             createdBatch.id,
             row.rowIndex,
             JSON.stringify(row.sourceRowJson),
@@ -1470,12 +1578,16 @@ function createRepositoryDouble(
 
       return createdBatch;
     },
-    async findImportBatches(): Promise<ProductionPlanImportBatchResponse[]> {
+    async findImportBatches(
+      facilityId: string
+    ): Promise<ProductionPlanImportBatchResponse[]> {
       const result = await memoryPool.query(
         `select
           id,
+          facility_id,
           file_name,
           sheet_name,
+          plan_year,
           week_number,
           status,
           total_row_count,
@@ -1485,7 +1597,9 @@ function createRepositoryDouble(
           created_at,
           updated_at
         from production_plan.production_plan_import_batches
-        order by created_at desc`
+        where facility_id = $1
+        order by created_at desc`,
+        [facilityId]
       );
 
       return result.rows
@@ -1497,13 +1611,16 @@ function createRepositoryDouble(
         );
     },
     async findImportBatchById(
+      facilityId: string,
       id: string
     ): Promise<ProductionPlanImportBatchResponse | null> {
       const result = await memoryPool.query(
         `select
           id,
+          facility_id,
           file_name,
           sheet_name,
+          plan_year,
           week_number,
           status,
           total_row_count,
@@ -1513,21 +1630,25 @@ function createRepositoryDouble(
           created_at,
           updated_at
         from production_plan.production_plan_import_batches
-        where id = $1
+        where facility_id = $1
+          and id = $2
         limit 1`,
-        [id]
+        [facilityId, id]
       );
 
       return mapBatchRow(result.rows[0] as ProductionPlanImportBatchRow | undefined);
     },
     async findImportBatchesByWeekNumber(
+      facilityId: string,
       weekNumber: number
     ): Promise<ProductionPlanImportBatchResponse[]> {
       const result = await memoryPool.query(
         `select
           id,
+          facility_id,
           file_name,
           sheet_name,
+          plan_year,
           week_number,
           status,
           total_row_count,
@@ -1537,7 +1658,8 @@ function createRepositoryDouble(
           created_at,
           updated_at
         from production_plan.production_plan_import_batches
-        where week_number = $1
+        where facility_id = $1
+          and week_number = $2
         order by
           case
             when status = 'active' then 0
@@ -1546,7 +1668,7 @@ function createRepositoryDouble(
             else 3
           end asc,
           created_at desc`,
-        [weekNumber]
+        [facilityId, weekNumber]
       );
 
       return result.rows
@@ -1558,13 +1680,16 @@ function createRepositoryDouble(
         );
     },
     async findActiveBatchByWeekNumber(
+      facilityId: string,
       weekNumber: number
     ): Promise<ProductionPlanImportBatchResponse | null> {
       const result = await memoryPool.query(
         `select
           id,
+          facility_id,
           file_name,
           sheet_name,
+          plan_year,
           week_number,
           status,
           total_row_count,
@@ -1574,21 +1699,24 @@ function createRepositoryDouble(
           created_at,
           updated_at
         from production_plan.production_plan_import_batches
-        where week_number = $1
+        where facility_id = $1
+          and week_number = $2
           and status = 'active'
         limit 1`,
-        [weekNumber]
+        [facilityId, weekNumber]
       );
 
       return mapBatchRow(result.rows[0] as ProductionPlanImportBatchRow | undefined);
     },
     async findActiveBatchRowsByWeekNumber(
+      facilityId: string,
       weekNumber: number
     ): Promise<{
       batch: ProductionPlanImportBatchResponse;
       rows: ProductionPlanImportRowResponse[];
     } | null> {
       const batch = (await this.findActiveBatchByWeekNumber(
+        facilityId,
         weekNumber
       )) as ProductionPlanImportBatchResponse | null;
 
@@ -1597,6 +1725,7 @@ function createRepositoryDouble(
       }
 
       const rows = (await this.findRowsByBatchId(
+        facilityId,
         batch.id
       )) as ProductionPlanImportRowResponse[];
 
@@ -1606,9 +1735,10 @@ function createRepositoryDouble(
       };
     },
     async activateBatchById(
+      facilityId: string,
       id: string
     ): Promise<ProductionPlanImportBatchResponse | null> {
-      const targetBatch = await this.findImportBatchById(id);
+      const targetBatch = await this.findImportBatchById(facilityId, id);
 
       if (!targetBatch) {
         return null;
@@ -1624,8 +1754,9 @@ function createRepositoryDouble(
           coalesce(sum(case when is_valid then 1 else 0 end), 0)::int as valid,
           coalesce(sum(case when is_valid then 0 else 1 end), 0)::int as invalid
         from production_plan.production_plan_rows
-        where batch_id = $1`,
-        [id]
+        where facility_id = $1
+          and batch_id = $2`,
+        [facilityId, id]
       );
       const summaryRow = summaryResult.rows[0] as
         | { total: number; valid: number; invalid: number }
@@ -1636,15 +1767,24 @@ function createRepositoryDouble(
       const syncTimestamp = nextTimestamp();
       await memoryPool.query(
         `update production_plan.production_plan_import_batches
-        set total_row_count = $2,
-            valid_row_count = $3,
-            invalid_row_count = $4,
-            updated_at = $5
-        where id = $1`,
-        [id, totalRowCount, validRowCount, invalidRowCount, syncTimestamp]
+        set total_row_count = $3,
+            valid_row_count = $4,
+            invalid_row_count = $5,
+            updated_at = $6
+        where facility_id = $1
+          and id = $2`,
+        [
+          facilityId,
+          id,
+          totalRowCount,
+          validRowCount,
+          invalidRowCount,
+          syncTimestamp
+        ]
       );
 
       let batch = (await this.findImportBatchById(
+        facilityId,
         id
       )) as ProductionPlanImportBatchResponse;
 
@@ -1652,10 +1792,11 @@ function createRepositoryDouble(
         const weeksResult = await memoryPool.query(
           `select distinct week_number
           from production_plan.production_plan_rows
-          where batch_id = $1
+          where facility_id = $1
+            and batch_id = $2
             and is_valid = true
             and week_number is not null`,
-          [id]
+          [facilityId, id]
         );
         const distinctWeeks = weeksResult.rows
           .map((row) => (row as { week_number: number }).week_number)
@@ -1679,12 +1820,14 @@ function createRepositoryDouble(
         const inferTimestamp = nextTimestamp();
         await memoryPool.query(
           `update production_plan.production_plan_import_batches
-          set week_number = $2,
-              updated_at = $3
-          where id = $1`,
-          [id, resolvedWeek, inferTimestamp]
+          set week_number = $3,
+              updated_at = $4
+          where facility_id = $1
+            and id = $2`,
+          [facilityId, id, resolvedWeek, inferTimestamp]
         );
         batch = (await this.findImportBatchById(
+          facilityId,
           id
         )) as ProductionPlanImportBatchResponse;
       }
@@ -1707,23 +1850,27 @@ function createRepositoryDouble(
       await memoryPool.query(
         `update production_plan.production_plan_import_batches
           set status = 'superseded',
-              updated_at = $2
+              updated_at = $3
         where week_number = $1
+          and facility_id = $2
           and status = 'active'`,
-        [batch.weekNumber, supersededTimestamp]
+        [batch.weekNumber, facilityId, supersededTimestamp]
       );
 
       const activationTimestamp = nextTimestamp();
       const result = await memoryPool.query(
         `update production_plan.production_plan_import_batches
           set status = 'active',
-              activated_at = $2,
-              updated_at = $3
-        where id = $1
+              activated_at = $3,
+              updated_at = $4
+        where facility_id = $1
+          and id = $2
         returning
           id,
+          facility_id,
           file_name,
           sheet_name,
+          plan_year,
           week_number,
           status,
           total_row_count,
@@ -1732,19 +1879,25 @@ function createRepositoryDouble(
           activated_at,
           created_at,
           updated_at`,
-        [id, activationTimestamp, activationTimestamp]
+        [facilityId, id, activationTimestamp, activationTimestamp]
       );
 
       return mapBatchRow(result.rows[0] as ProductionPlanImportBatchRow | undefined);
     },
-    async deleteBatchById(id: string): Promise<ProductionPlanImportBatchResponse | null> {
+    async deleteBatchById(
+      facilityId: string,
+      id: string
+    ): Promise<ProductionPlanImportBatchResponse | null> {
       const result = await memoryPool.query(
         `delete from production_plan.production_plan_import_batches
-        where id = $1
+        where facility_id = $1
+          and id = $2
         returning
           id,
+          facility_id,
           file_name,
           sheet_name,
+          plan_year,
           week_number,
           status,
           total_row_count,
@@ -1753,17 +1906,19 @@ function createRepositoryDouble(
           activated_at,
           created_at,
           updated_at`,
-        [id]
+        [facilityId, id]
       );
 
       return mapBatchRow(result.rows[0] as ProductionPlanImportBatchRow | undefined);
     },
     async findRowsByBatchId(
+      facilityId: string,
       batchId: string
     ): Promise<ProductionPlanImportRowResponse[]> {
       const result = await memoryPool.query(
         `select
           id,
+          facility_id,
           batch_id,
           row_index,
           source_row_json,
@@ -1790,26 +1945,32 @@ function createRepositoryDouble(
           created_at,
           updated_at
         from production_plan.production_plan_rows
-        where batch_id = $1
+        where facility_id = $1
+          and batch_id = $2
         order by row_index asc`,
-        [batchId]
+        [facilityId, batchId]
       );
 
       return result.rows
         .map((row) => mapRowRecord(row as ProductionPlanRowRecord))
         .filter((row): row is ProductionPlanImportRowResponse => row !== null);
     },
-    async countRowsByBatchId(batchId: string): Promise<number> {
+    async countRowsByBatchId(
+      facilityId: string,
+      batchId: string
+    ): Promise<number> {
       const result = await memoryPool.query(
         `select count(*)::int as c
         from production_plan.production_plan_rows
-        where batch_id = $1`,
-        [batchId]
+        where facility_id = $1
+          and batch_id = $2`,
+        [facilityId, batchId]
       );
 
       return Number((result.rows[0] as { c: number } | undefined)?.c ?? 0);
     },
     async findRowsByBatchIdPage(
+      facilityId: string,
       batchId: string,
       limit: number,
       offset: number
@@ -1817,6 +1978,7 @@ function createRepositoryDouble(
       const result = await memoryPool.query(
         `select
           id,
+          facility_id,
           batch_id,
           row_index,
           source_row_json,
@@ -1843,20 +2005,25 @@ function createRepositoryDouble(
           created_at,
           updated_at
         from production_plan.production_plan_rows
-        where batch_id = $1
+        where facility_id = $1
+          and batch_id = $2
         order by row_index asc
-        limit $2 offset $3`,
-        [batchId, limit, offset]
+        limit $3 offset $4`,
+        [facilityId, batchId, limit, offset]
       );
 
       return result.rows
         .map((row) => mapRowRecord(row as ProductionPlanRowRecord))
         .filter((row): row is ProductionPlanImportRowResponse => row !== null);
     },
-    async findRowById(id: string): Promise<ProductionPlanImportRowResponse | null> {
+    async findRowById(
+      facilityId: string,
+      id: string
+    ): Promise<ProductionPlanImportRowResponse | null> {
       const result = await memoryPool.query(
         `select
           id,
+          facility_id,
           batch_id,
           row_index,
           source_row_json,
@@ -1883,30 +2050,38 @@ function createRepositoryDouble(
           created_at,
           updated_at
         from production_plan.production_plan_rows
-        where id = $1
+        where facility_id = $1
+          and id = $2
         limit 1`,
-        [id]
+        [facilityId, id]
       );
 
       return mapRowRecord(result.rows[0] as ProductionPlanRowRecord | undefined);
     },
     async updateRowAndRefreshBatchSummary(
+      facilityId: string,
       id: string,
       input: UpdateProductionPlanRowRecord
     ) {
-      const existingRow = await this.findRowById(id);
+      const existingRow = await this.findRowById(facilityId, id);
 
       if (!existingRow) {
         return null;
       }
 
-      const existingBatch = await this.findImportBatchById(existingRow.batchId);
+      const existingBatch = await this.findImportBatchById(
+        facilityId,
+        existingRow.batchId
+      );
 
       if (!existingBatch) {
         throw new Error("Failed to load production plan batch.");
       }
 
-      const batchRows = await this.findRowsByBatchId(existingRow.batchId);
+      const batchRows = await this.findRowsByBatchId(
+        facilityId,
+        existingRow.batchId
+      );
       const projectedRows = batchRows.map((row) =>
         row.id === id
           ? {
@@ -1948,30 +2123,32 @@ function createRepositoryDouble(
       const rowUpdatedAt = nextTimestamp();
       const updateResult = await memoryPool.query(
         `update production_plan.production_plan_rows
-          set week_raw = $2,
-              week_number = $3,
-              customer_name = $4,
-              ordering_party_code = $5,
-              customer_order_number = $6,
-              customer_order_item_number = $7,
-              work_order_number = $8,
-              material_code = $9,
-              material_name = $10,
-              material_color = $11,
-              material_size = $12,
-              quantity = $13,
-              order_unit = $14,
-              planned_finish_date = $15,
-              department_code = $16,
-              department_name = $17,
-              priority = $18,
-              priority_level = $19,
-              is_valid = $20,
-              validation_errors = $21,
-              updated_at = $22
-        where id = $1
+          set week_raw = $3,
+              week_number = $4,
+              customer_name = $5,
+              ordering_party_code = $6,
+              customer_order_number = $7,
+              customer_order_item_number = $8,
+              work_order_number = $9,
+              material_code = $10,
+              material_name = $11,
+              material_color = $12,
+              material_size = $13,
+              quantity = $14,
+              order_unit = $15,
+              planned_finish_date = $16,
+              department_code = $17,
+              department_name = $18,
+              priority = $19,
+              priority_level = $20,
+              is_valid = $21,
+              validation_errors = $22,
+              updated_at = $23
+        where facility_id = $1
+          and id = $2
         returning
           id,
+          facility_id,
           batch_id,
           row_index,
           source_row_json,
@@ -1998,6 +2175,7 @@ function createRepositoryDouble(
           created_at,
           updated_at`,
         [
+          facilityId,
           id,
           input.weekRaw,
           input.weekNumber,
@@ -2032,15 +2210,18 @@ function createRepositoryDouble(
       const batchUpdatedAt = nextTimestamp();
       const batchUpdateResult = await memoryPool.query(
         `update production_plan.production_plan_import_batches
-          set total_row_count = $2,
-              valid_row_count = $3,
-              invalid_row_count = $4,
-              updated_at = $5
-        where id = $1
+          set total_row_count = $3,
+              valid_row_count = $4,
+              invalid_row_count = $5,
+              updated_at = $6
+        where facility_id = $1
+          and id = $2
         returning
           id,
+          facility_id,
           file_name,
           sheet_name,
+          plan_year,
           week_number,
           status,
           total_row_count,
@@ -2050,6 +2231,7 @@ function createRepositoryDouble(
           created_at,
           updated_at`,
         [
+          facilityId,
           existingBatch.id,
           totalRowCount,
           validRowCount,
@@ -2082,6 +2264,7 @@ function mapBatchRow(
 
   return {
     id: row.id,
+    facilityId: row.facility_id,
     fileName: row.file_name,
     sheetName: row.sheet_name,
     planYear: row.plan_year ?? null,
@@ -2107,6 +2290,7 @@ function mapRowRecord(
   return {
     id: row.id,
     batchId: row.batch_id,
+    facilityId: row.facility_id,
     rowIndex: row.row_index,
     sourceRowJson:
       typeof row.source_row_json === "string"

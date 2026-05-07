@@ -23,7 +23,7 @@ import { routingKeys } from "@lemnixpro/shared-contracts";
 const INSERT_CHUNK_SIZE = 500;
 const POSTGRES_UNIQUE_VIOLATION_CODE = "23505";
 const ACTIVE_BATCH_PER_WEEK_UNIQUE_INDEX =
-  "production_plan_import_batches_active_year_week_unique";
+  "production_plan_import_batches_facility_active_year_week_unique";
 
 export type ProductionPlanImportBatchNotActivatableReason =
   | "no_valid_rows"
@@ -83,6 +83,7 @@ export class ActiveProductionPlanBatchMustRemainEligibleError extends Error {
 }
 
 export type CreateProductionPlanImportBatchRecord = {
+  facilityId: string;
   fileName: string;
   sheetName: string;
   planYear: number | null;
@@ -155,6 +156,7 @@ export class ProductionPlanImportsRepository {
         .insert(productionPlanImportBatches)
         .values({
           id: batchId,
+          facilityId: input.facilityId,
           fileName: input.fileName,
           sheetName: input.sheetName,
           planYear: input.planYear,
@@ -175,6 +177,7 @@ export class ProductionPlanImportsRepository {
         await transaction.insert(productionPlanRows).values(
           rowChunk.map((row) => ({
             id: randomUUID(),
+            facilityId: input.facilityId,
             batchId,
             rowIndex: row.rowIndex,
             sourceRowJson: row.sourceRowJson,
@@ -207,20 +210,29 @@ export class ProductionPlanImportsRepository {
     });
   }
 
-  async findImportBatches(): Promise<ProductionPlanImportBatch[]> {
+  async findImportBatches(
+    facilityId: string
+  ): Promise<ProductionPlanImportBatch[]> {
     return this.databaseClient
       .select()
       .from(productionPlanImportBatches)
+      .where(eq(productionPlanImportBatches.facilityId, facilityId))
       .orderBy(desc(productionPlanImportBatches.createdAt));
   }
 
   async findImportBatchesByWeekNumber(
+    facilityId: string,
     weekNumber: number
   ): Promise<ProductionPlanImportBatch[]> {
     return this.databaseClient
       .select()
       .from(productionPlanImportBatches)
-      .where(eq(productionPlanImportBatches.weekNumber, weekNumber))
+      .where(
+        and(
+          eq(productionPlanImportBatches.facilityId, facilityId),
+          eq(productionPlanImportBatches.weekNumber, weekNumber)
+        )
+      )
       .orderBy(
         asc(sql<number>`
           case
@@ -234,17 +246,26 @@ export class ProductionPlanImportsRepository {
       );
   }
 
-  async findImportBatchById(id: string): Promise<ProductionPlanImportBatch | null> {
+  async findImportBatchById(
+    facilityId: string,
+    id: string
+  ): Promise<ProductionPlanImportBatch | null> {
     const [batch] = await this.databaseClient
       .select()
       .from(productionPlanImportBatches)
-      .where(eq(productionPlanImportBatches.id, id))
+      .where(
+        and(
+          eq(productionPlanImportBatches.facilityId, facilityId),
+          eq(productionPlanImportBatches.id, id)
+        )
+      )
       .limit(1);
 
     return batch ?? null;
   }
 
   async findActiveBatchByWeekNumber(
+    facilityId: string,
     weekNumber: number
   ): Promise<ProductionPlanImportBatch | null> {
     const [batch] = await this.databaseClient
@@ -253,6 +274,7 @@ export class ProductionPlanImportsRepository {
       .where(
         and(
           eq(productionPlanImportBatches.weekNumber, weekNumber),
+          eq(productionPlanImportBatches.facilityId, facilityId),
           eq(productionPlanImportBatches.status, "active")
         )
       )
@@ -262,15 +284,16 @@ export class ProductionPlanImportsRepository {
   }
 
   async findActiveBatchRowsByWeekNumber(
+    facilityId: string,
     weekNumber: number
   ): Promise<ActiveProductionPlanBatchRowsResult | null> {
-    const batch = await this.findActiveBatchByWeekNumber(weekNumber);
+    const batch = await this.findActiveBatchByWeekNumber(facilityId, weekNumber);
 
     if (!batch) {
       return null;
     }
 
-    const rows = await this.findRowsByBatchId(batch.id);
+    const rows = await this.findRowsByBatchId(facilityId, batch.id);
 
     return {
       batch,
@@ -278,13 +301,21 @@ export class ProductionPlanImportsRepository {
     };
   }
 
-  async activateBatchById(id: string): Promise<ProductionPlanImportBatch | null> {
+  async activateBatchById(
+    facilityId: string,
+    id: string
+  ): Promise<ProductionPlanImportBatch | null> {
     try {
       return await this.databaseClient.transaction(async (transaction) => {
         const [targetBatch] = await transaction
           .select()
           .from(productionPlanImportBatches)
-          .where(eq(productionPlanImportBatches.id, id))
+          .where(
+            and(
+              eq(productionPlanImportBatches.facilityId, facilityId),
+              eq(productionPlanImportBatches.id, id)
+            )
+          )
           .limit(1);
 
         if (!targetBatch) {
@@ -348,6 +379,7 @@ export class ProductionPlanImportsRepository {
             and(
               eq(productionPlanImportBatches.weekNumber, batch.weekNumber),
               eq(productionPlanImportBatches.planYear, batch.planYear),
+              eq(productionPlanImportBatches.facilityId, facilityId),
               eq(productionPlanImportBatches.status, "active")
             )
           );
@@ -387,24 +419,41 @@ export class ProductionPlanImportsRepository {
     }
   }
 
-  async findRowsByBatchId(batchId: string): Promise<ProductionPlanRow[]> {
+  async findRowsByBatchId(
+    facilityId: string,
+    batchId: string
+  ): Promise<ProductionPlanRow[]> {
     return this.databaseClient
       .select()
       .from(productionPlanRows)
-      .where(eq(productionPlanRows.batchId, batchId))
+      .where(
+        and(
+          eq(productionPlanRows.facilityId, facilityId),
+          eq(productionPlanRows.batchId, batchId)
+        )
+      )
       .orderBy(asc(productionPlanRows.rowIndex));
   }
 
-  async countRowsByBatchId(batchId: string): Promise<number> {
+  async countRowsByBatchId(
+    facilityId: string,
+    batchId: string
+  ): Promise<number> {
     const [row] = await this.databaseClient
       .select({ total: count() })
       .from(productionPlanRows)
-      .where(eq(productionPlanRows.batchId, batchId));
+      .where(
+        and(
+          eq(productionPlanRows.facilityId, facilityId),
+          eq(productionPlanRows.batchId, batchId)
+        )
+      );
 
     return Number(row?.total ?? 0);
   }
 
   async findRowsByBatchIdPage(
+    facilityId: string,
     batchId: string,
     limit: number,
     offset: number
@@ -412,18 +461,31 @@ export class ProductionPlanImportsRepository {
     return this.databaseClient
       .select()
       .from(productionPlanRows)
-      .where(eq(productionPlanRows.batchId, batchId))
+      .where(
+        and(
+          eq(productionPlanRows.facilityId, facilityId),
+          eq(productionPlanRows.batchId, batchId)
+        )
+      )
       .orderBy(asc(productionPlanRows.rowIndex))
       .limit(limit)
       .offset(offset);
   }
 
-  async deleteBatchById(id: string): Promise<ProductionPlanImportBatch | null> {
+  async deleteBatchById(
+    facilityId: string,
+    id: string
+  ): Promise<ProductionPlanImportBatch | null> {
     return this.databaseClient.transaction(async (transaction) => {
       const [existing] = await transaction
         .select()
         .from(productionPlanImportBatches)
-        .where(eq(productionPlanImportBatches.id, id))
+        .where(
+          and(
+            eq(productionPlanImportBatches.facilityId, facilityId),
+            eq(productionPlanImportBatches.id, id)
+          )
+        )
         .limit(1);
 
       if (!existing) {
@@ -432,23 +494,37 @@ export class ProductionPlanImportsRepository {
 
       await transaction
         .delete(productionPlanImportBatches)
-        .where(eq(productionPlanImportBatches.id, id));
+        .where(
+          and(
+            eq(productionPlanImportBatches.facilityId, facilityId),
+            eq(productionPlanImportBatches.id, id)
+          )
+        );
 
       return existing;
     });
   }
 
-  async findRowById(id: string): Promise<ProductionPlanRow | null> {
+  async findRowById(
+    facilityId: string,
+    id: string
+  ): Promise<ProductionPlanRow | null> {
     const [row] = await this.databaseClient
       .select()
       .from(productionPlanRows)
-      .where(eq(productionPlanRows.id, id))
+      .where(
+        and(
+          eq(productionPlanRows.facilityId, facilityId),
+          eq(productionPlanRows.id, id)
+        )
+      )
       .limit(1);
 
     return row ?? null;
   }
 
   async updateRowAndRefreshBatchSummary(
+    facilityId: string,
     id: string,
     input: UpdateProductionPlanRowRecord
   ): Promise<UpdateProductionPlanRowResult | null> {
@@ -456,7 +532,12 @@ export class ProductionPlanImportsRepository {
       const [existingRow] = await transaction
         .select()
         .from(productionPlanRows)
-        .where(eq(productionPlanRows.id, id))
+        .where(
+          and(
+            eq(productionPlanRows.facilityId, facilityId),
+            eq(productionPlanRows.id, id)
+          )
+        )
         .limit(1);
 
       if (!existingRow) {
@@ -466,7 +547,12 @@ export class ProductionPlanImportsRepository {
       const [existingBatch] = await transaction
         .select()
         .from(productionPlanImportBatches)
-        .where(eq(productionPlanImportBatches.id, existingRow.batchId))
+        .where(
+          and(
+            eq(productionPlanImportBatches.facilityId, facilityId),
+            eq(productionPlanImportBatches.id, existingRow.batchId)
+          )
+        )
         .limit(1);
 
       if (!existingBatch) {
@@ -517,7 +603,12 @@ export class ProductionPlanImportsRepository {
             sql<number>`coalesce(sum(case when ${productionPlanRows.isValid} then 0 else 1 end), 0)::int`
         })
         .from(productionPlanRows)
-        .where(eq(productionPlanRows.batchId, updatedRow.batchId));
+        .where(
+          and(
+            eq(productionPlanRows.facilityId, facilityId),
+            eq(productionPlanRows.batchId, updatedRow.batchId)
+          )
+        );
 
       const invalidRowCount = summary?.invalidRowCount ?? 0;
       const validRowCount = summary?.validRowCount ?? 0;

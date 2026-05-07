@@ -31,6 +31,7 @@ export const productionPlanImportBatches = productionPlanSchema.table(
   "production_plan_import_batches",
   {
     id: uuid("id").primaryKey().notNull(),
+    facilityId: varchar("facility_id", { length: 128 }).notNull(),
     fileName: varchar("file_name", { length: 255 }).notNull(),
     sheetName: varchar("sheet_name", { length: 255 }).notNull(),
     planYear: integer("plan_year"),
@@ -58,16 +59,21 @@ export const productionPlanImportBatches = productionPlanSchema.table(
   },
   (table) => ({
     weekNumberIndex: index("production_plan_import_batches_week_number_idx").on(
+      table.facilityId,
       table.weekNumber
     ),
     planYearWeekIndex: index("production_plan_import_batches_plan_year_week_idx").on(
+      table.facilityId,
       table.planYear,
       table.weekNumber
     ),
+    facilityStatusIndex: index(
+      "production_plan_import_batches_facility_status_idx"
+    ).on(table.facilityId, table.status),
     activeWeekUniqueIndex: uniqueIndex(
-      "production_plan_import_batches_active_year_week_unique"
+      "production_plan_import_batches_facility_active_year_week_unique"
     )
-      .on(table.planYear, table.weekNumber)
+      .on(table.facilityId, table.planYear, table.weekNumber)
       .where(sql`${table.status} = 'active'`)
   })
 );
@@ -76,6 +82,7 @@ export const productionPlanRows = productionPlanSchema.table(
   "production_plan_rows",
   {
     id: uuid("id").primaryKey().notNull(),
+    facilityId: varchar("facility_id", { length: 128 }).notNull(),
     batchId: uuid("batch_id")
       .notNull()
       .references(() => productionPlanImportBatches.id, {
@@ -130,10 +137,15 @@ export const productionPlanRows = productionPlanSchema.table(
   },
   (table) => ({
     batchIdIndex: index("production_plan_rows_batch_id_idx").on(table.batchId),
+    facilityBatchIndex: index("production_plan_rows_facility_batch_idx").on(
+      table.facilityId,
+      table.batchId
+    ),
     batchMaterialCodeIndex: index(
       "production_plan_rows_batch_material_code_idx"
-    ).on(table.batchId, table.materialCode),
+    ).on(table.facilityId, table.batchId, table.materialCode),
     batchWorkOrderIndex: index("production_plan_rows_batch_work_order_idx").on(
+      table.facilityId,
       table.batchId,
       table.workOrderNumber
     ),

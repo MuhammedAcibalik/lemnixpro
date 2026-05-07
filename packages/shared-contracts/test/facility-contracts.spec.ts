@@ -10,6 +10,8 @@ import {
   type Facility,
   type FacilityAccessCheckRequest,
   type FacilityAccessCheckResponse,
+  type MainProfile,
+  type ProductionPlanImportBatch,
   type SetUserFacilityGrantsRequest,
   type UserFacilityGrant
 } from "../src";
@@ -111,5 +113,40 @@ describe("facility contracts", () => {
     expect(updateRequest.grants[0]?.moduleKeys).toContain("cut-list");
     expect(checkRequest.facilityId).toBe("facility-1");
     expect(checkResponse.allowed).toBe(true);
+  });
+
+  it("models facility-scoped downstream records without changing existing field names", () => {
+    const mainProfile = {
+      id: "profile-1",
+      facilityId: "facility-izmir",
+      code: "MP-01",
+      name: "Main Profile",
+      stockLengthMm: 6000,
+      linkedProductCode: "PRD-01",
+      linkedProductName: "Product",
+      cuttingSpecs: [],
+      isActive: true,
+      notes: null,
+      createdAt: "2026-05-07T00:00:00.000Z",
+      updatedAt: "2026-05-07T00:00:00.000Z"
+    } satisfies MainProfile;
+    const productionPlanBatch = {
+      id: "batch-1",
+      facilityId: "facility-izmir",
+      fileName: "week.xlsx",
+      sheetName: "Plan",
+      planYear: 2026,
+      weekNumber: 19,
+      status: "imported",
+      totalRowCount: 1,
+      validRowCount: 1,
+      invalidRowCount: 0,
+      activatedAt: null,
+      createdAt: "2026-05-07T00:00:00.000Z",
+      updatedAt: "2026-05-07T00:00:00.000Z"
+    } satisfies ProductionPlanImportBatch;
+
+    expect(mainProfile.facilityId).toBe("facility-izmir");
+    expect(productionPlanBatch.facilityId).toBe("facility-izmir");
   });
 });

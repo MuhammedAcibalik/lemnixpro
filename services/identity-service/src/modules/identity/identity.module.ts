@@ -10,6 +10,7 @@ import { FacilityAccessService } from "./facility-access.service";
 import { JwtAuthGuard } from "./jwt-auth.guard";
 import { JwtStrategy } from "./jwt.strategy";
 import { PasswordHasherService } from "./password-hasher.service";
+import { RolesGuard } from "./roles.guard";
 import { TokenModule } from "./token.module";
 import { UsersRepository } from "./users.repository";
 
@@ -21,6 +22,7 @@ import { UsersRepository } from "./users.repository";
     FacilityAccessService,
     JwtAuthGuard,
     JwtStrategy,
+    RolesGuard,
     FacilityAccessRepository,
     PasswordHasherService,
     UsersRepository

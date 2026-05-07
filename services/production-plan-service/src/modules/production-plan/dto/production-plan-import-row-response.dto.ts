@@ -9,6 +9,9 @@ export class ProductionPlanImportRowResponseDto implements ProductionPlanImportR
   @ApiProperty({ type: String })
   batchId!: string;
 
+  @ApiProperty({ type: String })
+  facilityId!: string;
+
   @ApiProperty({ type: Number })
   rowIndex!: number;
 

@@ -1,6 +1,6 @@
 CREATE TYPE "identity"."facility_access_role" AS ENUM('SUPER_ADMIN', 'CENTRAL_PLANNER', 'FACILITY_ADMIN', 'FACILITY_PLANNER', 'FACILITY_OPERATOR', 'FACILITY_VIEWER');--> statement-breakpoint
-ALTER TYPE "identity"."user_role" ADD VALUE IF NOT EXISTS 'SUPER_ADMIN';--> statement-breakpoint
-ALTER TYPE "identity"."user_role" ADD VALUE IF NOT EXISTS 'CENTRAL_PLANNER';--> statement-breakpoint
+ALTER TYPE "identity"."user_role" ADD VALUE IF NOT EXISTS 'SUPER_ADMIN' BEFORE 'ADMIN';--> statement-breakpoint
+ALTER TYPE "identity"."user_role" ADD VALUE IF NOT EXISTS 'CENTRAL_PLANNER' BEFORE 'PLANNER';--> statement-breakpoint
 CREATE TABLE "identity"."user_facility_grants" (
 	"id" uuid PRIMARY KEY NOT NULL,
 	"user_id" uuid NOT NULL,

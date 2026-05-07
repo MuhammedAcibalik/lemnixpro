@@ -58,7 +58,8 @@ describe("api-gateway-service facility context", () => {
           body.scope === "all" ||
           (body.scope === "single" &&
             body.facilityId === "facility-izmir" &&
-            body.moduleKey === "master-data");
+            (body.moduleKey === "master-data" ||
+              body.moduleKey === "production-plan"));
 
         responseMessage.writeHead(200, {
           "content-type": "application/json"
@@ -147,6 +148,43 @@ describe("api-gateway-service facility context", () => {
         return;
       }
 
+      if (
+        requestMessage.method === "GET" &&
+        requestUrl === "/production-plan-imports"
+      ) {
+        responseMessage.writeHead(200, {
+          "content-type": "application/json"
+        });
+        responseMessage.end(
+          JSON.stringify([
+            {
+              facilityId: requestMessage.headers[requestHeaders.facilityId],
+              facilityScope: requestMessage.headers[requestHeaders.facilityScope],
+              route: "production-plan-imports"
+            }
+          ])
+        );
+        return;
+      }
+
+      if (
+        requestMessage.method === "POST" &&
+        /^\/production-plan-imports\/[^/]+\/activate$/.test(requestUrl)
+      ) {
+        const [, , batchId] = requestUrl.split("/");
+        responseMessage.writeHead(200, {
+          "content-type": "application/json"
+        });
+        responseMessage.end(
+          JSON.stringify({
+            id: batchId,
+            facilityId: requestMessage.headers[requestHeaders.facilityId],
+            facilityScope: requestMessage.headers[requestHeaders.facilityScope]
+          })
+        );
+        return;
+      }
+
       responseMessage.writeHead(404, {
         "content-type": "application/json"
       });
@@ -211,6 +249,9 @@ describe("api-gateway-service facility context", () => {
       .expect(200);
 
     expect(identityRequests).toHaveLength(1);
+    expect(identityRequests[0]?.headers.authorization).toBe(
+      `Bearer ${accessToken}`
+    );
     expect(identityRequests[0]?.body).toMatchObject({
       scope: "single",
       facilityId: "facility-izmir",
@@ -240,6 +281,22 @@ describe("api-gateway-service facility context", () => {
         facilityScope: "single"
       }
     ]);
+  });
+
+  it("keeps existing downstream flows unchanged when facility headers are absent", async () => {
+    const httpServer = app.getHttpServer() as Parameters<typeof request>[0];
+    const accessToken = await issueToken("PLANNER");
+
+    const response = await request(httpServer)
+      .get("/main-profiles")
+      .set("Authorization", `Bearer ${accessToken}`)
+      .expect(200);
+
+    expect(identityRequests).toHaveLength(0);
+    expect(masterDataRequests).toHaveLength(1);
+    expect(masterDataRequests[0]?.headers[requestHeaders.facilityId]).toBeUndefined();
+    expect(masterDataRequests[0]?.headers[requestHeaders.facilityScope]).toBeUndefined();
+    expect(response.body).toEqual([{}]);
   });
 
   it("rejects invalid facility scope before calling downstream services", async () => {
@@ -297,6 +354,49 @@ describe("api-gateway-service facility context", () => {
         facilityScope: "all"
       }
     ]);
+  });
+
+  it("authorizes and forwards production-plan facility context", async () => {
+    const httpServer = app.getHttpServer() as Parameters<typeof request>[0];
+    const accessToken = await issueToken("PLANNER");
+
+    const response = await request(httpServer)
+      .get("/production-plan-imports")
+      .set("Authorization", `Bearer ${accessToken}`)
+      .set(requestHeaders.facilityId, "facility-izmir")
+      .expect(200);
+
+    expect(identityRequests).toHaveLength(1);
+    expect(identityRequests[0]?.body).toMatchObject({
+      scope: "single",
+      facilityId: "facility-izmir",
+      moduleKey: "production-plan"
+    });
+    expect(response.body).toEqual([
+      {
+        facilityId: "facility-izmir",
+        facilityScope: "single",
+        route: "production-plan-imports"
+      }
+    ]);
+  });
+
+  it("forwards single facility context on production-plan write routes", async () => {
+    const httpServer = app.getHttpServer() as Parameters<typeof request>[0];
+    const accessToken = await issueToken("PLANNER");
+    const batchId = "11111111-1111-4111-8111-111111111111";
+
+    const response = await request(httpServer)
+      .post(`/production-plan-imports/${batchId}/activate`)
+      .set("Authorization", `Bearer ${accessToken}`)
+      .set(requestHeaders.facilityId, "facility-izmir")
+      .expect(200);
+
+    expect(response.body).toEqual({
+      id: batchId,
+      facilityId: "facility-izmir",
+      facilityScope: "single"
+    });
   });
 
   async function issueToken(role: string): Promise<string> {

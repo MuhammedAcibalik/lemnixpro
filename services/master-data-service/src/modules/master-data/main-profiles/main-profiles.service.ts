@@ -41,7 +41,7 @@ import {
 import { ProductionPlanCutListReconcileTriggerService } from "../../../infrastructure/integration/production-plan-cut-list-reconcile-trigger.service";
 
 const MAIN_PROFILE_LINKED_PRODUCT_PROFILE_UNIQUE =
-  "master_data_main_profiles_linked_product_profile_code_unique";
+  "master_data_main_profiles_facility_product_profile_code_unique";
 const MAIN_PROFILE_CODE_MAX_LENGTH = 100;
 const MAIN_PROFILE_NAME_MAX_LENGTH = 200;
 const LINKED_PRODUCT_CODE_MAX_LENGTH = 100;
@@ -75,6 +75,7 @@ export class MainProfilesService {
   ) {}
 
   async createImport(
+    facilityId: string,
     file: UploadedMainProfileImportFile | undefined
   ): Promise<MainProfileImportBatchResponseDto> {
     const normalizedFile = this.validateAndNormalizeUpload(file);
@@ -83,7 +84,7 @@ export class MainProfilesService {
       normalizedFile.buffer
     );
     const validRows = parsedImport.rows.filter((row) => row.isValid);
-    const profileRecords = this.toImportedProfileRecords(validRows);
+    const profileRecords = this.toImportedProfileRecords(facilityId, validRows);
 
     if (profileRecords.length === 0) {
       throw new BadRequestException(
@@ -99,6 +100,7 @@ export class MainProfilesService {
         0
       );
       const batch = await this.mainProfilesRepository.createImportBatch({
+        facilityId,
         fileName: normalizedFile.originalname,
         sheetName: parsedImport.sheetName,
         totalRowCount: parsedImport.totalRowCount,
@@ -182,8 +184,10 @@ export class MainProfilesService {
    * Yanlış profile yazılmış kesim satırlarını, kesim koduna göre doğru profile taşır.
    * Yedek alındıktan sonra üretim ortamında bir kez çalıştırılmalıdır.
    */
-  async realignMisplacedCuttingSpecs(): Promise<MainProfileCuttingRealignmentResult> {
-    const profiles = await this.mainProfilesRepository.findAll();
+  async realignMisplacedCuttingSpecs(
+    facilityId: string
+  ): Promise<MainProfileCuttingRealignmentResult> {
+    const profiles = await this.mainProfilesRepository.findAll(facilityId);
 
     type Mutable = MainProfile & { cuttingSpecs: MainProfileCuttingSpec[] };
     const working: Mutable[] = profiles.map((p) => ({
@@ -256,7 +260,7 @@ export class MainProfilesService {
         continue;
       }
 
-      await this.mainProfilesRepository.update(id, {
+      await this.mainProfilesRepository.update(facilityId, id, {
         cuttingSpecs: next.cuttingSpecs
       });
       profilesUpdated += 1;
@@ -275,11 +279,13 @@ export class MainProfilesService {
   }
 
   async create(
+    facilityId: string,
     request: CreateMainProfileRequestDto
   ): Promise<MainProfileResponseDto> {
-    const createInput = this.toCreateRecord(request);
+    const createInput = this.toCreateRecord(facilityId, request);
 
     await this.ensureLinkedProductProfilePairAvailable(
+      facilityId,
       createInput.linkedProductCode,
       createInput.code
     );
@@ -296,23 +302,27 @@ export class MainProfilesService {
     }
   }
 
-  async findAll(): Promise<MainProfileResponseDto[]> {
-    const profiles = await this.mainProfilesRepository.findAll();
+  async findAll(facilityId: string): Promise<MainProfileResponseDto[]> {
+    const profiles = await this.mainProfilesRepository.findAll(facilityId);
 
     return profiles.map((profile) => this.toResponse(profile));
   }
 
-  async findById(id: string): Promise<MainProfileResponseDto> {
-    const profile = await this.getProfileOrThrow(id);
+  async findById(
+    facilityId: string,
+    id: string
+  ): Promise<MainProfileResponseDto> {
+    const profile = await this.getProfileOrThrow(facilityId, id);
 
     return this.toResponse(profile);
   }
 
   async update(
+    facilityId: string,
     id: string,
     request: UpdateMainProfileRequestDto
   ): Promise<MainProfileResponseDto> {
-    const existingProfile = await this.getProfileOrThrow(id);
+    const existingProfile = await this.getProfileOrThrow(facilityId, id);
     const updateInput = this.toUpdateRecord(request, existingProfile);
 
     if (Object.keys(updateInput).length === 0) {
@@ -326,6 +336,7 @@ export class MainProfilesService {
       const nextLinked = updateInput.linkedProductCode ?? existingProfile.linkedProductCode;
       const conflictingProfile =
         await this.mainProfilesRepository.findByLinkedProductAndCode(
+          facilityId,
           nextLinked,
           nextCode
         );
@@ -339,6 +350,7 @@ export class MainProfilesService {
 
     try {
       const updatedProfile = await this.mainProfilesRepository.update(
+        facilityId,
         id,
         updateInput
       );
@@ -356,12 +368,18 @@ export class MainProfilesService {
     }
   }
 
-  async activate(id: string): Promise<MainProfileResponseDto> {
-    return this.setActiveState(id, true);
+  async activate(
+    facilityId: string,
+    id: string
+  ): Promise<MainProfileResponseDto> {
+    return this.setActiveState(facilityId, id, true);
   }
 
-  async deactivate(id: string): Promise<MainProfileResponseDto> {
-    return this.setActiveState(id, false);
+  async deactivate(
+    facilityId: string,
+    id: string
+  ): Promise<MainProfileResponseDto> {
+    return this.setActiveState(facilityId, id, false);
   }
 
   private validateAndNormalizeUpload(
@@ -400,10 +418,14 @@ export class MainProfilesService {
   }
 
   private toImportedProfileRecords(
+    facilityId: string,
     rows: NormalizedMainProfileImportRow[]
   ): CreateMainProfileRecord[] {
     const profilesByCompositeKey = new Map<string, CreateMainProfileRecord>();
-    const profileMetadataByCompositeKey = this.buildImportProfileMetadata(rows);
+    const profileMetadataByCompositeKey = this.buildImportProfileMetadata(
+      facilityId,
+      rows
+    );
 
     for (const row of rows) {
       if (
@@ -434,6 +456,7 @@ export class MainProfilesService {
         profileMetadataByCompositeKey.get(
           this.toImportCompositeKey(linkedProductCode, profileCode)
         ) ?? {
+          facilityId,
           code: profileCode,
           name: row.profileName.trim(),
           stockLengthMm: row.stockLengthMm,
@@ -458,6 +481,7 @@ export class MainProfilesService {
 
       if (!existingProfile) {
         profilesByCompositeKey.set(compositeKey, {
+          facilityId,
           code: profileMetadata.code,
           name: profileMetadata.name,
           stockLengthMm: profileMetadata.stockLengthMm,
@@ -483,6 +507,7 @@ export class MainProfilesService {
   }
 
   private buildImportProfileMetadata(
+    facilityId: string,
     rows: NormalizedMainProfileImportRow[]
   ): Map<string, CreateMainProfileRecord> {
     const metadata = new Map<string, CreateMainProfileRecord>();
@@ -510,6 +535,7 @@ export class MainProfilesService {
       }
 
       metadata.set(compositeKey, {
+        facilityId,
         code: profileCode,
         name: row.profileName.trim(),
         stockLengthMm: row.stockLengthMm,
@@ -572,18 +598,23 @@ export class MainProfilesService {
   }
 
   private async setActiveState(
+    facilityId: string,
     id: string,
     isActive: boolean
   ): Promise<MainProfileResponseDto> {
-    const existingProfile = await this.getProfileOrThrow(id);
+    const existingProfile = await this.getProfileOrThrow(facilityId, id);
 
     if (existingProfile.isActive === isActive) {
       return this.toResponse(existingProfile);
     }
 
-    const updatedProfile = await this.mainProfilesRepository.update(id, {
-      isActive
-    });
+    const updatedProfile = await this.mainProfilesRepository.update(
+      facilityId,
+      id,
+      {
+        isActive
+      }
+    );
 
     if (!updatedProfile) {
       throw new NotFoundException(`Main profile "${id}" was not found.`);
@@ -594,8 +625,11 @@ export class MainProfilesService {
     return this.toResponse(updatedProfile);
   }
 
-  private async getProfileOrThrow(id: string): Promise<MainProfile> {
-    const profile = await this.mainProfilesRepository.findById(id);
+  private async getProfileOrThrow(
+    facilityId: string,
+    id: string
+  ): Promise<MainProfile> {
+    const profile = await this.mainProfilesRepository.findById(facilityId, id);
 
     if (!profile) {
       throw new NotFoundException(`Main profile "${id}" was not found.`);
@@ -605,11 +639,13 @@ export class MainProfilesService {
   }
 
   private async ensureLinkedProductProfilePairAvailable(
+    facilityId: string,
     linkedProductCode: string,
     profileCode: string
   ): Promise<void> {
     const existingProfile =
       await this.mainProfilesRepository.findByLinkedProductAndCode(
+        facilityId,
         linkedProductCode,
         profileCode
       );
@@ -622,6 +658,7 @@ export class MainProfilesService {
   }
 
   private toCreateRecord(
+    facilityId: string,
     request: CreateMainProfileRequestDto
   ): CreateMainProfileRecord {
     const code = this.normalizeRequiredText(request.code, "code", {
@@ -630,6 +667,7 @@ export class MainProfilesService {
     });
 
     return {
+      facilityId,
       code,
       name: this.normalizeRequiredText(request.name, "name", {
         maxLength: MAIN_PROFILE_NAME_MAX_LENGTH
@@ -748,6 +786,7 @@ export class MainProfilesService {
   private toResponse(profile: MainProfile): MainProfileResponseDto {
     return {
       id: profile.id,
+      facilityId: profile.facilityId,
       code: profile.code,
       name: profile.name,
       stockLengthMm: profile.stockLengthMm,
@@ -772,6 +811,7 @@ export class MainProfilesService {
 
     return {
       id: batch.id,
+      facilityId: batch.facilityId,
       fileName: batch.fileName,
       sheetName: batch.sheetName,
       totalRowCount: batch.totalRowCount,

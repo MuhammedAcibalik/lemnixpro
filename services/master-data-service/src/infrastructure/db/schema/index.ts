@@ -23,6 +23,7 @@ export const mainProfiles = masterDataSchema.table(
   "main_profiles",
   {
     id: uuid("id").primaryKey().notNull(),
+    facilityId: varchar("facility_id", { length: 128 }).notNull(),
     code: varchar("code", { length: 100 }).notNull(),
     name: varchar("name", { length: 200 }).notNull(),
     stockLengthMm: integer("stock_length_mm").notNull(),
@@ -49,11 +50,14 @@ export const mainProfiles = masterDataSchema.table(
   },
   (table) => ({
     linkedProductAndProfileCodeUnique: uniqueIndex(
-      "master_data_main_profiles_linked_product_profile_code_unique"
-    ).on(table.linkedProductCode, table.code),
+      "master_data_main_profiles_facility_product_profile_code_unique"
+    ).on(table.facilityId, table.linkedProductCode, table.code),
+    facilityIndex: index("master_data_main_profiles_facility_idx").on(
+      table.facilityId
+    ),
     activeLinkedProductIndex: index(
       "master_data_main_profiles_active_linked_product_idx"
-    ).on(table.isActive, table.linkedProductCode),
+    ).on(table.facilityId, table.isActive, table.linkedProductCode),
     stockLengthPositiveCheck: check(
       "master_data_main_profiles_stock_length_positive",
       sql`${table.stockLengthMm} > 0`
@@ -65,6 +69,7 @@ export const mainProfileImportBatches = masterDataSchema.table(
   "main_profile_import_batches",
   {
     id: uuid("id").primaryKey().notNull(),
+    facilityId: varchar("facility_id", { length: 128 }).notNull(),
     fileName: varchar("file_name", { length: 255 }).notNull(),
     sheetName: varchar("sheet_name", { length: 255 }).notNull(),
     totalRowCount: integer("total_row_count").notNull(),
@@ -78,7 +83,12 @@ export const mainProfileImportBatches = masterDataSchema.table(
     })
       .notNull()
       .defaultNow()
-  }
+  },
+  (table) => ({
+    facilityIndex: index("master_data_profile_import_batches_facility_idx").on(
+      table.facilityId
+    )
+  })
 );
 
 export type MainProfile = typeof mainProfiles.$inferSelect;

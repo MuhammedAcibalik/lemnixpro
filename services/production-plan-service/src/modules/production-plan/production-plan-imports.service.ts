@@ -72,6 +72,7 @@ export class ProductionPlanImportsService {
   }
 
   async createImport(
+    facilityId: string,
     file: UploadedProductionPlanImportFile | undefined
   ): Promise<ProductionPlanImportBatchResponseDto> {
     const normalizedFile = this.validateAndNormalizeUpload(file);
@@ -85,6 +86,7 @@ export class ProductionPlanImportsService {
 
     const createdBatch =
       await this.productionPlanImportsRepository.createImportBatch({
+        facilityId,
         fileName: normalizedFile.originalname,
         sheetName: parsedImport.sheetName,
         planYear: batchPlanYear,
@@ -123,17 +125,22 @@ export class ProductionPlanImportsService {
     return this.toBatchResponse(createdBatch);
   }
 
-  async findAllImports(): Promise<ProductionPlanImportBatchResponseDto[]> {
-    const batches = await this.productionPlanImportsRepository.findImportBatches();
+  async findAllImports(
+    facilityId: string
+  ): Promise<ProductionPlanImportBatchResponseDto[]> {
+    const batches =
+      await this.productionPlanImportsRepository.findImportBatches(facilityId);
 
     return batches.map((batch) => this.toBatchResponse(batch));
   }
 
   async findImportsByWeekNumber(
+    facilityId: string,
     weekNumber: number
   ): Promise<ProductionPlanImportBatchResponseDto[]> {
     const batches =
       await this.productionPlanImportsRepository.findImportBatchesByWeekNumber(
+        facilityId,
         weekNumber
       );
 
@@ -141,9 +148,14 @@ export class ProductionPlanImportsService {
   }
 
   async findImportById(
+    facilityId: string,
     id: string
   ): Promise<ProductionPlanImportBatchDetailResponseDto> {
-    const batch = await this.productionPlanImportsRepository.findImportBatchById(id);
+    const batch =
+      await this.productionPlanImportsRepository.findImportBatchById(
+        facilityId,
+        id
+      );
 
     if (!batch) {
       throw new NotFoundException(
@@ -154,8 +166,15 @@ export class ProductionPlanImportsService {
     return this.toBatchDetailResponse(batch);
   }
 
-  async findRowsByBatchId(id: string): Promise<ProductionPlanImportRowResponseDto[]> {
-    const batch = await this.productionPlanImportsRepository.findImportBatchById(id);
+  async findRowsByBatchId(
+    facilityId: string,
+    id: string
+  ): Promise<ProductionPlanImportRowResponseDto[]> {
+    const batch =
+      await this.productionPlanImportsRepository.findImportBatchById(
+        facilityId,
+        id
+      );
 
     if (!batch) {
       throw new NotFoundException(
@@ -163,17 +182,25 @@ export class ProductionPlanImportsService {
       );
     }
 
-    const rows = await this.productionPlanImportsRepository.findRowsByBatchId(id);
+    const rows = await this.productionPlanImportsRepository.findRowsByBatchId(
+      facilityId,
+      id
+    );
 
     return rows.map((row) => this.toRowResponse(row));
   }
 
   async findRowsByBatchIdPaged(
+    facilityId: string,
     id: string,
     limitInput: number,
     offsetInput: number
   ): Promise<ProductionPlanImportRowsPageResponseDto> {
-    const batch = await this.productionPlanImportsRepository.findImportBatchById(id);
+    const batch =
+      await this.productionPlanImportsRepository.findImportBatchById(
+        facilityId,
+        id
+      );
 
     if (!batch) {
       throw new NotFoundException(
@@ -185,9 +212,13 @@ export class ProductionPlanImportsService {
     const offset = Math.max(0, offsetInput);
 
     const totalCount =
-      await this.productionPlanImportsRepository.countRowsByBatchId(id);
+      await this.productionPlanImportsRepository.countRowsByBatchId(
+        facilityId,
+        id
+      );
     const rows =
       await this.productionPlanImportsRepository.findRowsByBatchIdPage(
+        facilityId,
         id,
         limit,
         offset
@@ -201,9 +232,9 @@ export class ProductionPlanImportsService {
     };
   }
 
-  async deleteImport(id: string): Promise<void> {
+  async deleteImport(facilityId: string, id: string): Promise<void> {
     const deleted =
-      await this.productionPlanImportsRepository.deleteBatchById(id);
+      await this.productionPlanImportsRepository.deleteBatchById(facilityId, id);
 
     if (!deleted) {
       throw new NotFoundException(
@@ -212,10 +243,16 @@ export class ProductionPlanImportsService {
     }
   }
 
-  async activateImport(id: string): Promise<ProductionPlanImportBatchResponseDto> {
+  async activateImport(
+    facilityId: string,
+    id: string
+  ): Promise<ProductionPlanImportBatchResponseDto> {
     try {
       const activatedBatch =
-        await this.productionPlanImportsRepository.activateBatchById(id);
+        await this.productionPlanImportsRepository.activateBatchById(
+          facilityId,
+          id
+        );
 
       if (!activatedBatch) {
         throw new NotFoundException(
@@ -237,10 +274,12 @@ export class ProductionPlanImportsService {
   }
 
   async findActiveBatchByWeekNumber(
+    facilityId: string,
     weekNumber: number
   ): Promise<ProductionPlanImportBatchResponseDto> {
     const batch =
       await this.productionPlanImportsRepository.findActiveBatchByWeekNumber(
+        facilityId,
         weekNumber
       );
 
@@ -254,10 +293,12 @@ export class ProductionPlanImportsService {
   }
 
   async findActiveBatchRowsByWeekNumber(
+    facilityId: string,
     weekNumber: number
   ): Promise<ProductionPlanActiveBatchRowsResponseDto> {
     const activeBatchRows =
       await this.productionPlanImportsRepository.findActiveBatchRowsByWeekNumber(
+        facilityId,
         weekNumber
       );
 
@@ -274,6 +315,7 @@ export class ProductionPlanImportsService {
   }
 
   async updateRow(
+    facilityId: string,
     id: string,
     request: UpdateProductionPlanRowRequestDto
   ): Promise<ProductionPlanImportRowResponseDto> {
@@ -283,7 +325,10 @@ export class ProductionPlanImportsService {
       );
     }
 
-    const existingRow = await this.productionPlanImportsRepository.findRowById(id);
+    const existingRow = await this.productionPlanImportsRepository.findRowById(
+      facilityId,
+      id
+    );
 
     if (!existingRow) {
       throw new NotFoundException(`Production plan row "${id}" was not found.`);
@@ -300,6 +345,7 @@ export class ProductionPlanImportsService {
     try {
       updatedRowResult =
         await this.productionPlanImportsRepository.updateRowAndRefreshBatchSummary(
+          facilityId,
           id,
           {
             weekRaw: normalizedRow.weekRaw,
@@ -430,6 +476,7 @@ export class ProductionPlanImportsService {
   ): ProductionPlanImportBatchResponseDto {
     return {
       id: batch.id,
+      facilityId: batch.facilityId,
       fileName: batch.fileName,
       sheetName: batch.sheetName,
       planYear: batch.planYear,
@@ -454,6 +501,7 @@ export class ProductionPlanImportsService {
     return {
       id: row.id,
       batchId: row.batchId,
+      facilityId: row.facilityId,
       rowIndex: row.rowIndex,
       sourceRowJson: row.sourceRowJson,
       weekRaw: row.weekRaw,
@@ -487,6 +535,7 @@ export class ProductionPlanImportsService {
   ): ProductionPlanActiveBatchRowResponseDto {
     return {
       id: row.id,
+      facilityId: row.facilityId,
       rowIndex: row.rowIndex,
       weekRaw: row.weekRaw,
       weekNumber: row.weekNumber,

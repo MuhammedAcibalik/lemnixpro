@@ -14,6 +14,9 @@ export class ProductionPlanImportBatchResponseDto
   id!: string;
 
   @ApiProperty({ type: String })
+  facilityId!: string;
+
+  @ApiProperty({ type: String })
   fileName!: string;
 
   @ApiProperty({ type: String })

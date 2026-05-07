@@ -12,4 +12,11 @@
 
 ## Current Scope
 
-This repository pass creates the technical boundaries for these domains but intentionally does not implement domain workflows yet.
+Facility catalog, identity facility/module grants, gateway facility context,
+main profile master data, and weekly production plan imports are active
+implemented backend slices. Master data and production plan records are now
+facility-scoped by their owning services.
+
+Cut-list snapshots, optimization orchestration, optimization results, RabbitMQ
+optimization envelopes, and the Python optimization engine are not yet
+facility-partitioned.

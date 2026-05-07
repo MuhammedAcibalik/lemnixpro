@@ -15,6 +15,7 @@ import {
 import {
   ApiBearerAuth,
   ApiBadRequestResponse,
+  ApiForbiddenResponse,
   ApiNotFoundResponse,
   ApiOkResponse,
   ApiOperation,
@@ -32,6 +33,8 @@ import {
 } from "./dto/facility-access.dto";
 import { FacilityAccessService } from "./facility-access.service";
 import { JwtAuthGuard } from "./jwt-auth.guard";
+import { Roles } from "./roles.decorator";
+import { RolesGuard } from "./roles.guard";
 
 type AuthenticatedRequest = {
   user: JwtClaims;
@@ -46,10 +49,15 @@ export class FacilityAccessController {
   ) {}
 
   @Get("users/:id/facility-access")
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles("SUPER_ADMIN")
+  @ApiBearerAuth()
   @ApiOperation({
     summary: "Return identity-owned facility/module grants for one user."
   })
   @ApiOkResponse({ type: UserFacilityAccessResponseDto })
+  @ApiUnauthorizedResponse({ description: "Bearer token is missing or invalid." })
+  @ApiForbiddenResponse({ description: "SUPER_ADMIN role is required." })
   @ApiNotFoundResponse({ description: "User was not found." })
   async getUserFacilityAccess(
     @Param("id", new ParseUUIDPipe({ version: "4" })) userId: string
@@ -58,10 +66,15 @@ export class FacilityAccessController {
   }
 
   @Put("users/:id/facility-grants")
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles("SUPER_ADMIN")
+  @ApiBearerAuth()
   @ApiOperation({
     summary: "Replace identity-owned facility/module grants for one user."
   })
   @ApiOkResponse({ type: UserFacilityAccessResponseDto })
+  @ApiUnauthorizedResponse({ description: "Bearer token is missing or invalid." })
+  @ApiForbiddenResponse({ description: "SUPER_ADMIN role is required." })
   @ApiBadRequestResponse({
     description: "Grant payload is invalid or violates grant invariants."
   })

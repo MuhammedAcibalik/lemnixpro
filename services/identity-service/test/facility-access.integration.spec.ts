@@ -149,10 +149,13 @@ describe("identity-service facility access", () => {
 
   it("creates, replaces, and lists explicit facility grants for a user", async () => {
     const httpServer = app.getHttpServer() as Parameters<typeof request>[0];
+    const superAdmin = addUser("SUPER_ADMIN");
+    const superAdminToken = await issueToken(superAdmin);
     const user = addUser("PLANNER");
 
     const putResponse = await request(httpServer)
       .put(`/users/${user.id}/facility-grants`)
+      .set("Authorization", `Bearer ${superAdminToken}`)
       .send({
         grants: [
           {
@@ -194,17 +197,162 @@ describe("identity-service facility access", () => {
 
     const getResponse = await request(httpServer)
       .get(`/users/${user.id}/facility-access`)
+      .set("Authorization", `Bearer ${superAdminToken}`)
       .expect(200);
 
     expect(getResponse.body).toEqual(putResponse.body);
   });
 
-  it("rejects duplicate grant rows and multiple default facilities", async () => {
+  it("rejects unauthenticated admin facility grant reads and mutations", async () => {
     const httpServer = app.getHttpServer() as Parameters<typeof request>[0];
     const user = addUser("PLANNER");
 
     await request(httpServer)
+      .get(`/users/${user.id}/facility-access`)
+      .expect(401);
+
+    await request(httpServer)
       .put(`/users/${user.id}/facility-grants`)
+      .send({
+        grants: [
+          {
+            facilityId: "facility-izmir",
+            facilityRole: "FACILITY_PLANNER",
+            moduleKeys: ["workspace"],
+            isDefault: true
+          }
+        ]
+      })
+      .expect(401);
+  });
+
+  it("prevents normal users from reading or mutating another user's grants", async () => {
+    const httpServer = app.getHttpServer() as Parameters<typeof request>[0];
+    const caller = addUser("PLANNER");
+    const target = addUser("VIEWER");
+    const callerToken = await issueToken(caller);
+
+    await request(httpServer)
+      .get(`/users/${target.id}/facility-access`)
+      .set("Authorization", `Bearer ${callerToken}`)
+      .expect(403);
+
+    await request(httpServer)
+      .put(`/users/${target.id}/facility-grants`)
+      .set("Authorization", `Bearer ${callerToken}`)
+      .send({
+        grants: [
+          {
+            facilityId: "facility-izmir",
+            facilityRole: "FACILITY_VIEWER",
+            moduleKeys: ["workspace"],
+            isDefault: true
+          }
+        ]
+      })
+      .expect(403);
+  });
+
+  it("prevents normal users from mutating their own facility grants", async () => {
+    const httpServer = app.getHttpServer() as Parameters<typeof request>[0];
+    const caller = addUser("PLANNER");
+    const callerToken = await issueToken(caller);
+
+    await request(httpServer)
+      .put(`/users/${caller.id}/facility-grants`)
+      .set("Authorization", `Bearer ${callerToken}`)
+      .send({
+        grants: [
+          {
+            facilityId: "facility-izmir",
+            facilityRole: "FACILITY_PLANNER",
+            moduleKeys: ["workspace"],
+            isDefault: true
+          }
+        ]
+      })
+      .expect(403);
+  });
+
+  it("prevents CENTRAL_PLANNER from reading or mutating another user's grants", async () => {
+    const httpServer = app.getHttpServer() as Parameters<typeof request>[0];
+    const caller = addUser("CENTRAL_PLANNER");
+    const target = addUser("VIEWER");
+    const callerToken = await issueToken(caller);
+
+    await request(httpServer)
+      .get(`/users/${target.id}/facility-access`)
+      .set("Authorization", `Bearer ${callerToken}`)
+      .expect(403);
+
+    await request(httpServer)
+      .put(`/users/${target.id}/facility-grants`)
+      .set("Authorization", `Bearer ${callerToken}`)
+      .send({
+        grants: [
+          {
+            facilityId: "facility-izmir",
+            facilityRole: "FACILITY_VIEWER",
+            moduleKeys: ["workspace"],
+            isDefault: true
+          }
+        ]
+      })
+      .expect(403);
+  });
+
+  it("prevents CENTRAL_PLANNER from mutating their own facility grants", async () => {
+    const httpServer = app.getHttpServer() as Parameters<typeof request>[0];
+    const caller = addUser("CENTRAL_PLANNER");
+    const callerToken = await issueToken(caller);
+
+    await request(httpServer)
+      .put(`/users/${caller.id}/facility-grants`)
+      .set("Authorization", `Bearer ${callerToken}`)
+      .send({
+        grants: [
+          {
+            facilityId: "facility-izmir",
+            facilityRole: "CENTRAL_PLANNER",
+            moduleKeys: ["analytics"],
+            isDefault: false
+          }
+        ]
+      })
+      .expect(403);
+  });
+
+  it("uses the current stored role instead of stale JWT role claims", async () => {
+    const httpServer = app.getHttpServer() as Parameters<typeof request>[0];
+    const caller = addUser("PLANNER");
+    const target = addUser("VIEWER");
+    const staleSuperAdminToken = await issueToken(caller, "SUPER_ADMIN");
+
+    await request(httpServer)
+      .put(`/users/${target.id}/facility-grants`)
+      .set("Authorization", `Bearer ${staleSuperAdminToken}`)
+      .send({
+        grants: [
+          {
+            facilityId: "facility-izmir",
+            facilityRole: "FACILITY_VIEWER",
+            moduleKeys: ["workspace"],
+            isDefault: true
+          }
+        ]
+      })
+      .expect(403);
+  });
+
+  it("rejects duplicate grant rows and multiple default facilities", async () => {
+    const httpServer = app.getHttpServer() as Parameters<typeof request>[0];
+    const superAdmin = addUser("SUPER_ADMIN");
+    const superAdminToken = await issueToken(superAdmin);
+    const user = addUser("PLANNER");
+
+    await request(httpServer)
+      .put(`/users/${user.id}/facility-grants`)
+      .set("Authorization", `Bearer ${superAdminToken}`)
       .send({
         grants: [
           {
@@ -225,6 +373,7 @@ describe("identity-service facility access", () => {
 
     await request(httpServer)
       .put(`/users/${user.id}/facility-grants`)
+      .set("Authorization", `Bearer ${superAdminToken}`)
       .send({
         grants: [
           {
@@ -246,11 +395,14 @@ describe("identity-service facility access", () => {
 
   it("resolves normal user facility and module access explicitly", async () => {
     const httpServer = app.getHttpServer() as Parameters<typeof request>[0];
+    const superAdmin = addUser("SUPER_ADMIN");
+    const superAdminToken = await issueToken(superAdmin);
     const user = addUser("PLANNER");
     const token = await issueToken(user);
 
     await request(httpServer)
       .put(`/users/${user.id}/facility-grants`)
+      .set("Authorization", `Bearer ${superAdminToken}`)
       .send({
         grants: [
           {
@@ -350,6 +502,8 @@ describe("identity-service facility access", () => {
 
   it("requires explicit CENTRAL_PLANNER grants before allowing all-scope module access", async () => {
     const httpServer = app.getHttpServer() as Parameters<typeof request>[0];
+    const superAdmin = addUser("SUPER_ADMIN");
+    const superAdminToken = await issueToken(superAdmin);
     const user = addUser("CENTRAL_PLANNER");
     const token = await issueToken(user);
 
@@ -370,6 +524,7 @@ describe("identity-service facility access", () => {
 
     await request(httpServer)
       .put(`/users/${user.id}/facility-grants`)
+      .set("Authorization", `Bearer ${superAdminToken}`)
       .send({
         grants: [
           {
@@ -416,7 +571,10 @@ describe("identity-service facility access", () => {
     return user;
   }
 
-  async function issueToken(user: TestUser): Promise<string> {
+  async function issueToken(
+    user: TestUser,
+    role: string = user.role
+  ): Promise<string> {
     const jwtService = new JwtService({
       secret: "test-jwt-secret",
       signOptions: {
@@ -429,7 +587,7 @@ describe("identity-service facility access", () => {
     return jwtService.signAsync({
       sub: user.id,
       email: user.email,
-      role: user.role
+      role
     });
   }
 });

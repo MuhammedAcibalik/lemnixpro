@@ -2,6 +2,7 @@ import {
   Body,
   Controller,
   Get,
+  Headers,
   Inject,
   Param,
   ParseUUIDPipe,
@@ -24,6 +25,11 @@ import {
 } from "@nestjs/swagger";
 
 import type { MainProfileCuttingRealignmentResult } from "@lemnixpro/shared-contracts";
+
+import {
+  resolveSingleFacilityContext,
+  type FacilityRequestHeaders
+} from "../../../common/facility-context";
 
 import { CreateMainProfileRequestDto } from "./dto/create-main-profile-request.dto";
 import { MainProfileImportBatchResponseDto } from "./dto/main-profile-import-batch-response.dto";
@@ -61,9 +67,12 @@ export class MainProfilesController {
   @ApiCreatedResponse({ type: MainProfileImportBatchResponseDto })
   @ApiBadRequestResponse({ description: "Profil dosyası geçersiz." })
   async createImport(
+    @Headers() headers: FacilityRequestHeaders,
     @UploadedFile() file?: UploadedMainProfileImportFile
   ): Promise<MainProfileImportBatchResponseDto> {
-    return this.mainProfilesService.createImport(file);
+    const { facilityId } = resolveSingleFacilityContext(headers);
+
+    return this.mainProfilesService.createImport(facilityId, file);
   }
 
   @Post()
@@ -72,16 +81,23 @@ export class MainProfilesController {
   @ApiBadRequestResponse({ description: "Request payload failed validation." })
   @ApiConflictResponse({ description: "Main profile code already exists." })
   async create(
+    @Headers() headers: FacilityRequestHeaders,
     @Body() request: CreateMainProfileRequestDto
   ): Promise<MainProfileResponseDto> {
-    return this.mainProfilesService.create(request);
+    const { facilityId } = resolveSingleFacilityContext(headers);
+
+    return this.mainProfilesService.create(facilityId, request);
   }
 
   @Get()
   @ApiOperation({ summary: "List all main profile master data records." })
   @ApiOkResponse({ type: MainProfileResponseDto, isArray: true })
-  async findAll(): Promise<MainProfileResponseDto[]> {
-    return this.mainProfilesService.findAll();
+  async findAll(
+    @Headers() headers: FacilityRequestHeaders
+  ): Promise<MainProfileResponseDto[]> {
+    const { facilityId } = resolveSingleFacilityContext(headers);
+
+    return this.mainProfilesService.findAll(facilityId);
   }
 
   @Post("maintenance/realign-cutting-specs")
@@ -90,8 +106,12 @@ export class MainProfilesController {
       "Kesim koduna göre yanlış profile yazılmış düz kesimleri doğru profile taşır (tek seferlik bakım)."
   })
   @ApiOkResponse({ description: "Taşınan kesim sayısı ve çözülemeyen kayıtlar." })
-  async realignMisplacedCuttingSpecs(): Promise<MainProfileCuttingRealignmentResult> {
-    return this.mainProfilesService.realignMisplacedCuttingSpecs();
+  async realignMisplacedCuttingSpecs(
+    @Headers() headers: FacilityRequestHeaders
+  ): Promise<MainProfileCuttingRealignmentResult> {
+    const { facilityId } = resolveSingleFacilityContext(headers);
+
+    return this.mainProfilesService.realignMisplacedCuttingSpecs(facilityId);
   }
 
   @Get(":id")
@@ -99,9 +119,12 @@ export class MainProfilesController {
   @ApiOkResponse({ type: MainProfileResponseDto })
   @ApiNotFoundResponse({ description: "Main profile was not found." })
   async findById(
+    @Headers() headers: FacilityRequestHeaders,
     @Param("id", new ParseUUIDPipe({ version: "4" })) id: string
   ): Promise<MainProfileResponseDto> {
-    return this.mainProfilesService.findById(id);
+    const { facilityId } = resolveSingleFacilityContext(headers);
+
+    return this.mainProfilesService.findById(facilityId, id);
   }
 
   @Patch(":id")
@@ -113,10 +136,13 @@ export class MainProfilesController {
   @ApiNotFoundResponse({ description: "Main profile was not found." })
   @ApiConflictResponse({ description: "Main profile code already exists." })
   async update(
+    @Headers() headers: FacilityRequestHeaders,
     @Param("id", new ParseUUIDPipe({ version: "4" })) id: string,
     @Body() request: UpdateMainProfileRequestDto
   ): Promise<MainProfileResponseDto> {
-    return this.mainProfilesService.update(id, request);
+    const { facilityId } = resolveSingleFacilityContext(headers);
+
+    return this.mainProfilesService.update(facilityId, id, request);
   }
 
   @Patch(":id/activate")
@@ -124,9 +150,12 @@ export class MainProfilesController {
   @ApiOkResponse({ type: MainProfileResponseDto })
   @ApiNotFoundResponse({ description: "Main profile was not found." })
   async activate(
+    @Headers() headers: FacilityRequestHeaders,
     @Param("id", new ParseUUIDPipe({ version: "4" })) id: string
   ): Promise<MainProfileResponseDto> {
-    return this.mainProfilesService.activate(id);
+    const { facilityId } = resolveSingleFacilityContext(headers);
+
+    return this.mainProfilesService.activate(facilityId, id);
   }
 
   @Patch(":id/deactivate")
@@ -134,8 +163,11 @@ export class MainProfilesController {
   @ApiOkResponse({ type: MainProfileResponseDto })
   @ApiNotFoundResponse({ description: "Main profile was not found." })
   async deactivate(
+    @Headers() headers: FacilityRequestHeaders,
     @Param("id", new ParseUUIDPipe({ version: "4" })) id: string
   ): Promise<MainProfileResponseDto> {
-    return this.mainProfilesService.deactivate(id);
+    const { facilityId } = resolveSingleFacilityContext(headers);
+
+    return this.mainProfilesService.deactivate(facilityId, id);
   }
 }

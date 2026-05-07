@@ -13,6 +13,9 @@ export class ProductionPlanActiveBatchRowResponseDto
   @ApiProperty({ type: String })
   id!: string;
 
+  @ApiProperty({ type: String })
+  facilityId!: string;
+
   @ApiProperty({ type: Number })
   rowIndex!: number;
 

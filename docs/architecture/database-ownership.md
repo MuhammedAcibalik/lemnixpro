@@ -17,8 +17,14 @@ LemnixPRO uses service-owned persistence. Local development provisions a shared 
     foreign keys to `facility-service`
 - `master-data-service`
   - Owns the `master_data` schema
+  - Owns facility-scoped main profile and main profile import records; stores
+    `facility_id` as an opaque reference without a foreign key to
+    `facility-service`
 - `production-plan-service`
   - Owns the `production_plan` schema
+  - Owns facility-scoped production plan import batches and rows; stores
+    `facility_id` as an opaque reference without a foreign key to
+    `facility-service`
 - `cut-list-service`
   - Owns the `cut_list` schema
 - `optimization-orchestrator-service`

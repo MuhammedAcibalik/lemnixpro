@@ -248,6 +248,7 @@ export type MainProfileCuttingRealignmentResult = {
 /** Bir ana üründe (linkedProductCode) kullanılan tek profil seçeneği; doğal anahtar (linkedProductCode, code). */
 export type MainProfile = {
   id: EntityId;
+  facilityId: EntityId;
   code: string;
   name: string;
   stockLengthMm: number;
@@ -281,6 +282,7 @@ export type MainProfileImportInvalidReasonCount = {
 
 export type MainProfileImportBatch = {
   id: EntityId;
+  facilityId: EntityId;
   fileName: string;
   sheetName: string;
   totalRowCount: number;
@@ -300,6 +302,7 @@ export type ProductionPlanImportBatchStatus =
 
 export type ProductionPlanImportBatch = {
   id: EntityId;
+  facilityId: EntityId;
   fileName: string;
   sheetName: string;
   planYear: number | null;
@@ -318,6 +321,7 @@ export type ProductionPlanImportBatchDetail = ProductionPlanImportBatch;
 export type ProductionPlanImportRow = {
   id: EntityId;
   batchId: EntityId;
+  facilityId: EntityId;
   rowIndex: number;
   sourceRowJson: Record<string, unknown>;
   weekRaw: string | null;
@@ -354,6 +358,7 @@ export type ProductionPlanImportRowsPage = {
 
 export type ProductionPlanActiveBatchRow = {
   id: EntityId;
+  facilityId: EntityId;
   rowIndex: number;
   weekRaw: string | null;
   weekNumber: number | null;

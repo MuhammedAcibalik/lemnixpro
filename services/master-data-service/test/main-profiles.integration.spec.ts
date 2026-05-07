@@ -6,6 +6,7 @@ import { Test } from "@nestjs/testing";
 import { newDb } from "pg-mem";
 import request from "supertest";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { requestHeaders } from "@lemnixpro/shared-contracts";
 
 type QueryResult<Row> = {
   rows: Row[];
@@ -21,6 +22,7 @@ type QueryablePool = {
 
 type MainProfileResponse = {
   id: string;
+  facilityId: string;
   code: string;
   name: string;
   stockLengthMm: number;
@@ -34,6 +36,7 @@ type MainProfileResponse = {
 
 type MainProfileRow = {
   id: string;
+  facility_id: string;
   code: string;
   name: string;
   stock_length_mm: number;
@@ -47,6 +50,7 @@ type MainProfileRow = {
 
 type MainProfilesRepositoryShape = {
   create(input: {
+    facilityId: string;
     code: string;
     name: string;
     stockLengthMm: number;
@@ -55,13 +59,15 @@ type MainProfilesRepositoryShape = {
     isActive: boolean;
     notes: string | null;
   }): Promise<MainProfileResponse>;
-  findAll(): Promise<MainProfileResponse[]>;
-  findById(id: string): Promise<MainProfileResponse | null>;
+  findAll(facilityId: string): Promise<MainProfileResponse[]>;
+  findById(facilityId: string, id: string): Promise<MainProfileResponse | null>;
   findByLinkedProductAndCode(
+    facilityId: string,
     linkedProductCode: string,
     code: string
   ): Promise<MainProfileResponse | null>;
   update(
+    facilityId: string,
     id: string,
     input: Partial<{
       code: string;
@@ -110,6 +116,7 @@ describe("master-data-service main profiles", () => {
     await memoryPool.query(`
       create table master_data.main_profiles (
         id uuid primary key,
+        facility_id varchar(128) not null,
         code varchar(100) not null,
         name varchar(200) not null,
         stock_length_mm integer not null,
@@ -124,19 +131,20 @@ describe("master-data-service main profiles", () => {
       );
     `);
     await memoryPool.query(`
-      create unique index master_data_main_profiles_linked_product_profile_code_unique
-        on master_data.main_profiles (linked_product_code, code);
+      create unique index master_data_main_profiles_facility_product_profile_code_unique
+        on master_data.main_profiles (facility_id, linked_product_code, code);
     `);
 
     const mainProfilesRepository: MainProfilesRepositoryShape = {
       async create(input) {
         const result = await memoryPool.query<MainProfileRow>(
           `insert into master_data.main_profiles
-             (id, code, name, stock_length_mm, linked_product_code, linked_product_name, is_active, notes)
+             (id, facility_id, code, name, stock_length_mm, linked_product_code, linked_product_name, is_active, notes)
            values
-             ($1, $2, $3, $4, $5, $6, $7, $8)
+             ($1, $2, $3, $4, $5, $6, $7, $8, $9)
            returning
              id,
+             facility_id,
              code,
              name,
              stock_length_mm,
@@ -148,6 +156,7 @@ describe("master-data-service main profiles", () => {
              updated_at`,
           [
             crypto.randomUUID(),
+            input.facilityId,
             input.code,
             input.name,
             input.stockLengthMm,
@@ -166,10 +175,11 @@ describe("master-data-service main profiles", () => {
 
         return createdProfile;
       },
-      async findAll() {
+      async findAll(facilityId: string) {
         const result = await memoryPool.query<MainProfileRow>(
           `select
              id,
+             facility_id,
              code,
              name,
              stock_length_mm,
@@ -180,7 +190,10 @@ describe("master-data-service main profiles", () => {
              created_at,
              updated_at
            from master_data.main_profiles
+           where facility_id = $1
            order by linked_product_code asc, code asc`
+          ,
+          [facilityId]
         );
 
         return result.rows
@@ -189,10 +202,11 @@ describe("master-data-service main profiles", () => {
             (profile): profile is MainProfileResponse => profile !== null
           );
       },
-      async findById(id: string) {
+      async findById(facilityId: string, id: string) {
         const result = await memoryPool.query<MainProfileRow>(
           `select
              id,
+             facility_id,
              code,
              name,
              stock_length_mm,
@@ -203,17 +217,22 @@ describe("master-data-service main profiles", () => {
              created_at,
              updated_at
            from master_data.main_profiles
-           where id = $1
+           where facility_id = $1 and id = $2
            limit 1`,
-          [id]
+          [facilityId, id]
         );
 
         return mapMainProfileRow(result.rows[0]);
       },
-      async findByLinkedProductAndCode(linkedProductCode: string, code: string) {
+      async findByLinkedProductAndCode(
+        facilityId: string,
+        linkedProductCode: string,
+        code: string
+      ) {
         const result = await memoryPool.query<MainProfileRow>(
           `select
              id,
+             facility_id,
              code,
              name,
              stock_length_mm,
@@ -224,15 +243,19 @@ describe("master-data-service main profiles", () => {
              created_at,
              updated_at
            from master_data.main_profiles
-           where linked_product_code = $1 and code = $2
+           where facility_id = $1 and linked_product_code = $2 and code = $3
            limit 1`,
-          [linkedProductCode.trim().toUpperCase(), code.trim().toUpperCase()]
+          [
+            facilityId,
+            linkedProductCode.trim().toUpperCase(),
+            code.trim().toUpperCase()
+          ]
         );
 
         return mapMainProfileRow(result.rows[0]);
       },
-      async update(id, input) {
-        const existingProfile = await this.findById(id);
+      async update(facilityId, id, input) {
+        const existingProfile = await this.findById(facilityId, id);
 
         if (!existingProfile) {
           return null;
@@ -240,17 +263,18 @@ describe("master-data-service main profiles", () => {
 
         const result = await memoryPool.query<MainProfileRow>(
           `update master_data.main_profiles
-              set code = $2,
-                  name = $3,
-                  stock_length_mm = $4,
-                  linked_product_code = $5,
-                  linked_product_name = $6,
-                  is_active = $7,
-                  notes = $8,
+              set code = $3,
+                  name = $4,
+                  stock_length_mm = $5,
+                  linked_product_code = $6,
+                  linked_product_name = $7,
+                  is_active = $8,
+                  notes = $9,
                   updated_at = now()
-            where id = $1
+            where facility_id = $1 and id = $2
             returning
               id,
+              facility_id,
               code,
               name,
               stock_length_mm,
@@ -261,6 +285,7 @@ describe("master-data-service main profiles", () => {
               created_at,
               updated_at`,
           [
+            facilityId,
             id,
             input.code ?? existingProfile.code,
             input.name ?? existingProfile.name,
@@ -318,6 +343,7 @@ describe("master-data-service main profiles", () => {
 
     expect(createdProfile).toEqual({
       id: createdProfile.id,
+      facilityId: "default-facility",
       code: "MP-001",
       name: "Main Aluminum Profile",
       stockLengthMm: 6500,
@@ -415,6 +441,68 @@ describe("master-data-service main profiles", () => {
       .send({})
       .expect(400);
   });
+
+  it("scopes main profile records by active facility context", async () => {
+    const httpServer = app.getHttpServer() as Parameters<typeof request>[0];
+    const payload = {
+      code: "shared-code",
+      name: "Shared Code Profile",
+      stockLengthMm: 6000,
+      linkedProductCode: "shared-product",
+      linkedProductName: "Shared Product"
+    };
+
+    const facilityAResponse = await request(httpServer)
+      .post("/main-profiles")
+      .set(requestHeaders.facilityId, "facility-a")
+      .set(requestHeaders.facilityScope, "single")
+      .send(payload)
+      .expect(201);
+    const facilityAProfile = facilityAResponse.body as MainProfileResponse;
+
+    const facilityBResponse = await request(httpServer)
+      .post("/main-profiles")
+      .set(requestHeaders.facilityId, "facility-b")
+      .set(requestHeaders.facilityScope, "single")
+      .send(payload)
+      .expect(201);
+    const facilityBProfile = facilityBResponse.body as MainProfileResponse;
+
+    expect(facilityAProfile.facilityId).toBe("facility-a");
+    expect(facilityBProfile.facilityId).toBe("facility-b");
+
+    await request(httpServer)
+      .post("/main-profiles")
+      .set(requestHeaders.facilityId, "facility-a")
+      .send(payload)
+      .expect(409);
+
+    const facilityAList = await request(httpServer)
+      .get("/main-profiles")
+      .set(requestHeaders.facilityId, "facility-a")
+      .expect(200);
+    expect(facilityAList.body).toEqual([facilityAProfile]);
+
+    const facilityBList = await request(httpServer)
+      .get("/main-profiles")
+      .set(requestHeaders.facilityId, "facility-b")
+      .expect(200);
+    expect(facilityBList.body).toEqual([facilityBProfile]);
+
+    await request(httpServer)
+      .patch(`/main-profiles/${facilityBProfile.id}`)
+      .set(requestHeaders.facilityId, "facility-a")
+      .send({
+        name: "Cross Facility Edit"
+      })
+      .expect(404);
+
+    await request(httpServer)
+      .post("/main-profiles")
+      .set(requestHeaders.facilityScope, "all")
+      .send(payload)
+      .expect(403);
+  });
 });
 
 function mapMainProfileRow(
@@ -426,6 +514,7 @@ function mapMainProfileRow(
 
   return {
     id: row.id,
+    facilityId: row.facility_id,
     code: row.code,
     name: row.name,
     stockLengthMm: row.stock_length_mm,

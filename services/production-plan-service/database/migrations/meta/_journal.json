@@ -57,6 +57,13 @@
       "when": 1777850200000,
       "tag": "0007_row_lookup_indexes",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1777850400000,
+      "tag": "0008_facility_partition",
+      "breakpoints": true
     }
   ]
 }

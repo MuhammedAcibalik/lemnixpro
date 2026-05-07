@@ -74,7 +74,7 @@ describe("MainProfilesService import ownership", () => {
       } as never
     );
 
-    const result = await service.createImport({
+    const result = await service.createImport("facility-izmir", {
       originalname: "profile-import.xlsx",
       size: 1,
       buffer: Buffer.from([1]),
@@ -87,12 +87,14 @@ describe("MainProfilesService import ownership", () => {
     expect(upsertImportedProfiles).toHaveBeenCalledTimes(1);
     expect(upsertImportedProfiles.mock.calls[0]?.[0]).toEqual([
       expect.objectContaining({
+        facilityId: "facility-izmir",
         code: "PROFA",
         cuttingSpecs: [
           expect.objectContaining({ cuttingCode: "PROFA-CUT-1" })
         ]
       }),
       expect.objectContaining({
+        facilityId: "facility-izmir",
         code: "PROFB",
         name: "Profile B",
         cuttingSpecs: [

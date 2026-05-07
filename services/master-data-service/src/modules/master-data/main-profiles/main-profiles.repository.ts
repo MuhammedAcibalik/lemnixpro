@@ -15,6 +15,7 @@ import {
 } from "../../../infrastructure/db/schema";
 
 export type CreateMainProfileRecord = {
+  facilityId: string;
   code: string;
   name: string;
   stockLengthMm: number;
@@ -28,6 +29,7 @@ export type CreateMainProfileRecord = {
 export type UpdateMainProfileRecord = Partial<CreateMainProfileRecord>;
 
 export type CreateMainProfileImportBatchRecord = {
+  facilityId: string;
   fileName: string;
   sheetName: string;
   totalRowCount: number;
@@ -49,6 +51,7 @@ export class MainProfilesRepository {
       .insert(mainProfiles)
       .values({
         id: randomUUID(),
+        facilityId: input.facilityId,
         code: input.code,
         name: input.name,
         stockLengthMm: input.stockLengthMm,
@@ -67,10 +70,11 @@ export class MainProfilesRepository {
     return createdProfile;
   }
 
-  async findAll(): Promise<MainProfile[]> {
+  async findAll(facilityId: string): Promise<MainProfile[]> {
     return this.databaseClient
       .select()
       .from(mainProfiles)
+      .where(eq(mainProfiles.facilityId, facilityId))
       .orderBy(asc(mainProfiles.linkedProductCode), asc(mainProfiles.code));
   }
 
@@ -81,6 +85,7 @@ export class MainProfilesRepository {
       .insert(mainProfileImportBatches)
       .values({
         id: randomUUID(),
+        facilityId: input.facilityId,
         fileName: input.fileName,
         sheetName: input.sheetName,
         totalRowCount: input.totalRowCount,
@@ -108,6 +113,7 @@ export class MainProfilesRepository {
         .insert(mainProfiles)
         .values({
           id: randomUUID(),
+          facilityId: input.facilityId,
           code: input.code,
           name: input.name,
           stockLengthMm: input.stockLengthMm,
@@ -118,7 +124,11 @@ export class MainProfilesRepository {
           notes: input.notes
         })
         .onConflictDoUpdate({
-          target: [mainProfiles.linkedProductCode, mainProfiles.code],
+          target: [
+            mainProfiles.facilityId,
+            mainProfiles.linkedProductCode,
+            mainProfiles.code
+          ],
           set: {
             name: input.name,
             stockLengthMm: input.stockLengthMm,
@@ -142,17 +152,18 @@ export class MainProfilesRepository {
     return upsertedProfiles;
   }
 
-  async findById(id: string): Promise<MainProfile | null> {
+  async findById(facilityId: string, id: string): Promise<MainProfile | null> {
     const [profile] = await this.databaseClient
       .select()
       .from(mainProfiles)
-      .where(eq(mainProfiles.id, id))
+      .where(and(eq(mainProfiles.facilityId, facilityId), eq(mainProfiles.id, id)))
       .limit(1);
 
     return profile ?? null;
   }
 
   async findByLinkedProductAndCode(
+    facilityId: string,
     linkedProductCode: string,
     profileCode: string
   ): Promise<MainProfile | null> {
@@ -165,6 +176,25 @@ export class MainProfilesRepository {
       .where(
         and(
           eq(mainProfiles.linkedProductCode, linked),
+          eq(mainProfiles.code, code),
+          eq(mainProfiles.facilityId, facilityId)
+        )
+      )
+      .limit(1);
+
+    return profile ?? null;
+  }
+
+  async findByCode(
+    facilityId: string,
+    code: string
+  ): Promise<MainProfile | null> {
+    const [profile] = await this.databaseClient
+      .select()
+      .from(mainProfiles)
+      .where(
+        and(
+          eq(mainProfiles.facilityId, facilityId),
           eq(mainProfiles.code, code)
         )
       )
@@ -173,17 +203,8 @@ export class MainProfilesRepository {
     return profile ?? null;
   }
 
-  async findByCode(code: string): Promise<MainProfile | null> {
-    const [profile] = await this.databaseClient
-      .select()
-      .from(mainProfiles)
-      .where(eq(mainProfiles.code, code))
-      .limit(1);
-
-    return profile ?? null;
-  }
-
   async update(
+    facilityId: string,
     id: string,
     input: UpdateMainProfileRecord
   ): Promise<MainProfile | null> {
@@ -193,7 +214,7 @@ export class MainProfilesRepository {
         ...input,
         updatedAt: sql`now()`
       })
-      .where(eq(mainProfiles.id, id))
+      .where(and(eq(mainProfiles.facilityId, facilityId), eq(mainProfiles.id, id)))
       .returning();
 
     return updatedProfile ?? null;

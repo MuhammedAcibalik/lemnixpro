@@ -26,8 +26,10 @@ This is the active runtime service map for the backend-first microservices monor
   - Owns user facility/module grants and facility context resolution decisions
 - `services/master-data-service`
   - Main profile master data boundary
+  - Facility-scoped main profile catalog and profile import persistence
 - `services/production-plan-service`
   - Weekly production plan import boundary
+  - Facility-scoped import batches, rows, active-batch lookup, and activation
 - `services/cut-list-service`
   - Cut list snapshot management boundary
 - `services/optimization-orchestrator-service`
